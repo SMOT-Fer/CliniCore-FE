@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Estudio Frontend - Next.js
 
-## Getting Started
+Frontend moderna para SaaS Clínico con Next.js 16+, TypeScript y Tailwind CSS.
 
-First, run the development server:
+## 🚀 Quick Start
 
 ```bash
+# Instalar dependencias
+npm install
+
+# Desarrollo (puerto 3000 por defecto)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# Build para producción
+npm run build
+npm run start
+
+# Linting
+npm run lint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 📁 Estructura
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+app/
+  login/              # Página de login
+    page.tsx
+  css/                # Estilos (provisional, migrar a Tailwind)
+    login.css
+.env.local            # Variables de entorno locales
+next.config.ts        # Configuración Next.js
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🔌 Conexión con Backend
 
-## Learn More
+La aplicación se conecta al backend Node.js por medio de un proxy interno en Next.js (`/api/backend/*`).
 
-To learn more about Next.js, take a look at the following resources:
+Esto evita bloqueos de CORS en desarrollo local cuando el backend está en otro dominio (Render).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+El proxy usa `BACKEND_API_URL` y, si no existe, usa `NEXT_PUBLIC_API_URL`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Variables de entorno `.env.local`:
 
-## Deploy on Vercel
+```
+# API backend
+BACKEND_API_URL=https://saas-be-t4rh.onrender.com
+NEXT_PUBLIC_API_URL=https://saas-be-t4rh.onrender.com
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🔐 Autenticación
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Login:** `/login` - Formulario de acceso con email + password
+- **Sesión:** Cookies httpOnly con JWT (Bearer token)
+- **CSRF:** Protección con token CSRF en header `x-csrf-token`
+- **Refresh:** Renovación automática de token antes de expirar
+- **Redirect:** Usuarios autenticados se redirigen a `/superadmin`
+
+## 📝 Estado de componentes
+
+| Componente | Estado | Notas |
+|-----------|--------|-------|
+| Login | ✅ Migrado | React hooks + API integration |
+| Superadmin | ⏳ Pendiente | Requiere migración HTML/JS |
+| Dashboard | ⏳ Pendiente | Nuevo componente |
+
+## 🛠️ Stack Tecnológico
+
+- **Next.js 16+** - Framework React fullstack
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Utility-first styling
+- **React 19** - Latest React features
+
+## 🚨 Troubleshooting
+
+### "Error de CORS"
+- Verificar que el backend está corriendo en `https://saas-be-t4rh.onrender.com`
+- Confirmar que `CORS_STRICT=false` en `.env` backend
+
+### "401 Unauthorized"
+- El token expiró
+- Llamar a `/api/usuarios/refresh` automáticamente (está implementado)
+
+### "CSRF token mismatch"
+- El header `x-csrf-token` no coincide con la cookie
+- Asegurar que se obtiene token antes de cada request POST/PUT/DELETE
+
+## 📚 Documentación relacionada
+
+- [Backend README](../estudio/README.md)
+- [API Docs](https://saas-be-t4rh.onrender.com/api-docs)
+- [Deployment Guide](../estudio/DEPLOY_PROD.md)
