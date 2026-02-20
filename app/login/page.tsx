@@ -86,7 +86,7 @@ export default function LoginPage() {
         },
         body: JSON.stringify({
           email: email.trim().toUpperCase(),
-          password: password.trim()
+          password
         })
       });
 
@@ -112,7 +112,7 @@ export default function LoginPage() {
           setMessageType('error');
           setIsExiting(false);
         }
-      }, 420);
+      }, 480);
     } catch (error) {
       setMessage('Error de conexión. Intenta nuevamente.');
       setMessageType('error');
@@ -124,52 +124,68 @@ export default function LoginPage() {
     <>
       <div className={`page-transition ${isExiting ? 'visible' : ''}`} aria-hidden="true" />
       <main className={`login-page ${isExiting ? 'is-exiting' : 'page-enter'}`}>
-        <section className="login-card">
-          <div className="brand">
-            <h1>🏥 SaaS Clínico</h1>
-            <p>Acceso seguro para gestión de pacientes y citas</p>
-          </div>
+        <section className="login-shell">
+          <article className="login-card dark-card">
+            <div className="logo-badge" aria-hidden="true">F</div>
 
-          <form onSubmit={handleSubmit} className="login-form" noValidate>
-            <div className="form-group">
-              <label htmlFor="email">Correo corporativo</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="ejemplo@clinica.com"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
-              />
+            <div className="brand">
+              <h1>Login Here</h1>
             </div>
 
-            <div className="form-group">
-              <label htmlFor="password">Contraseña</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-              />
+            <form onSubmit={handleSubmit} className="login-form" noValidate>
+              <div className="form-group">
+                <label htmlFor="email">Correo corporativo</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="correo@clinica.com"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="Enter Password"
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+
+              <button type="submit" className="btn-login" disabled={isLoading}>
+                {isLoading ? 'Iniciando sesión...' : 'Log In'}
+              </button>
+
+              {message && (
+                <p className={`login-message ${messageType}`} role="alert">
+                  {message}
+                </p>
+              )}
+            </form>
+
+            <div className="login-links">
+              <p>Lost your Password?</p>
+              <p>Don&apos;t have an account?</p>
             </div>
+          </article>
 
-            <button type="submit" className="btn-login" disabled={isLoading}>
-              {isLoading ? 'Iniciando sesión...' : 'Iniciar sesión'}
-            </button>
-
-            {message && (
-              <p className={`login-message ${messageType}`} role="alert">
-                {message}
-              </p>
-            )}
-          </form>
+          <aside className="login-hero" aria-hidden="true">
+            <h2>
+              BIENVENIDO AL
+              <br />
+              SAAS CLÍNICO
+            </h2>
+          </aside>
         </section>
       </main>
     </>
