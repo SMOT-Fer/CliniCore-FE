@@ -493,39 +493,59 @@
 .bars-wrap {
   height: 250px;
   border-radius: 10px;
-  background: repeating-linear-gradient(
-    to right,
-    rgba(44, 62, 80, 0.05) 0,
-    rgba(44, 62, 80, 0.05) 10px,
-    transparent 10px,
-    transparent 24px
-  );
+  background: linear-gradient(180deg, #f7fbff 0%, #eef5fc 100%);
+  border: 1px solid #dbe7f3;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.55rem;
-  align-items: end;
-  padding: 0.4rem 0.55rem;
+  gap: 0.6rem;
+  align-items: stretch;
+  padding: 0.55rem 0.6rem;
 }
 
 .bar-col {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1fr auto;
   align-items: center;
-  justify-content: end;
   gap: 0.35rem;
+}
+
+.bar-track {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+    to top,
+    rgba(44, 62, 80, 0.05) 0,
+    rgba(44, 62, 80, 0.05) 1px,
+    transparent 1px,
+    transparent 26px
+  );
+  padding-bottom: 2px;
 }
 
 .bar {
   width: 100%;
-  max-width: 14px;
-  background: linear-gradient(180deg, #63c5da, #3498db);
-  border-radius: 6px 6px 2px 2px;
+  max-width: 34px;
+  min-height: 8%;
+  background: linear-gradient(180deg, #6da6df 0%, #4f88c7 100%);
+  border: 1px solid #4376af;
+  border-bottom: none;
+  border-radius: 8px 8px 3px 3px;
+  box-shadow: 0 2px 6px rgba(44, 62, 80, 0.16);
+  transition: height 0.36s ease;
 }
 
 .bar-day-label {
-  font-size: 0.72rem;
-  color: #5f6c7b;
+  width: 100%;
+  display: block;
+  text-align: center;
+  font-size: 0.73rem;
+  color: #4a5e73;
   font-weight: 700;
+  line-height: 1;
 }
 
 .superadmin-grid {
@@ -552,6 +572,211 @@
 
 .security-list strong {
   color: #2c3e50;
+}
+
+.clinicas-grid {
+  grid-template-columns: 1fr;
+}
+
+.clinicas-card {
+  width: 100%;
+}
+
+.clinicas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.clinica-btn-primary {
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  background: #3498db;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clinica-btn-primary:hover {
+  background: #2980b9;
+}
+
+.clinica-message {
+  margin-top: 0.6rem;
+  font-size: 0.84rem;
+}
+
+.clinica-message.error {
+  color: #c0392b;
+}
+
+.clinica-message.success {
+  color: #1f8f4b;
+}
+
+.clinicas-table-wrap {
+  margin-top: 0.8rem;
+  overflow: auto;
+}
+
+.clinicas-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+
+.clinicas-table th,
+.clinicas-table td {
+  border-bottom: 1px solid #e4edf6;
+  padding: 0.58rem 0.5rem;
+  font-size: 0.82rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.clinicas-table thead th {
+  color: #4a5e73;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.clinica-row-disabled {
+  background: #f2f4f7;
+  color: #7a8694;
+}
+
+.clinica-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.clinica-actions button {
+  border: 1px solid #d2dbe6;
+  border-radius: 7px;
+  background: #fff;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clinica-actions .desactivar {
+  border-color: #e5c0be;
+  color: #b23b34;
+}
+
+.clinica-actions .reactivar {
+  border-color: #b7dfca;
+  color: #1f8f4b;
+}
+
+.clinica-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 16, 28, 0.38);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.clinica-modal {
+  width: 100%;
+  max-width: 560px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #d8e3ef;
+  padding: 1rem;
+  box-shadow: 0 20px 40px rgba(44, 62, 80, 0.2);
+}
+
+.clinica-modal h3 {
+  font-size: 1.1rem;
+}
+
+.clinica-form {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.clinica-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.83rem;
+  color: #3d5063;
+}
+
+.clinica-form input,
+.clinica-form select {
+  height: 38px;
+  border: 1px solid #d2dbe6;
+  border-radius: 8px;
+  padding: 0 0.6rem;
+  font-size: 0.9rem;
+}
+
+.clinica-field-error {
+  font-size: 0.76rem;
+  color: #c0392b;
+}
+
+.clinica-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.clinica-modal-actions button {
+  border: 1px solid #d2dbe6;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-weight: 700;
+  background: #fff;
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.clinica-modal-actions button:hover {
+  transform: scale(1.02);
+}
+
+.clinica-modal-actions .clinica-btn-cancel {
+  border-color: #c0392b;
+  background: #c0392b;
+  color: #fff;
+}
+
+.clinica-modal-actions .clinica-btn-cancel:hover {
+  border-color: #a93226;
+  background: #a93226;
+}
+
+.clinica-modal-actions .clinica-btn-save:not(:disabled) {
+  border-color: #3498db;
+  background: #3498db;
+  color: #fff;
+}
+
+.clinica-modal-actions .clinica-btn-save:not(:disabled):hover {
+  border-color: #2980b9;
+  background: #2980b9;
+}
+
+.clinica-modal-actions .clinica-btn-save:disabled {
+  border-color: #c7ced8;
+  background: #c7ced8;
+  color: #eef2f6;
+  cursor: not-allowed;
+}
+
+.clinica-modal-actions .clinica-btn-save:disabled:hover {
+  background: #c7ced8;
+  transform: none;
 }
 
 .superadmin-card {

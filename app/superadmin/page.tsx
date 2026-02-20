@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import '../css/superadmin.css';
@@ -14,6 +14,7 @@ const API_LOGOUT = `${API_BASE}/usuarios/logout`;
 const API_CLINICAS = `${API_BASE}/clinicas`;
 const API_CLINICAS_ACTIVAS = `${API_BASE}/clinicas/public/activas`;
 const API_USUARIOS = `${API_BASE}/usuarios`;
+const API_PERSONAS = `${API_BASE}/personas`;
 const API_SESIONES = `${API_BASE}/admin/sesiones`;
 const API_SYSTEM_STATUS = `${API_BASE}/admin/system-status`;
 const MAX_TOOLTIP_ITEMS = 10;
@@ -46,6 +47,128 @@ type DashboardStats = {
   seguridad: Array<{ nombre: string; valor: string }>;
 };
 
+type Clinica = {
+  id: string;
+  nombre: string;
+  ruc?: string | null;
+  estado: 'ACTIVA' | 'INACTIVA';
+  direccion?: string | null;
+  telefono?: string | null;
+  created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+};
+
+type ClinicaForm = {
+  nombre: string;
+  ruc: string;
+  direccion: string;
+  telefono: string;
+  estado: 'ACTIVA' | 'INACTIVA';
+};
+
+type UsuarioAdmin = {
+  id: string;
+  clinica_id?: string | null;
+  persona_id: string;
+  email: string;
+  rol: 'ADMIN' | 'DOCTOR' | 'STAFF' | 'SUPERADMIN';
+  estado: 'ACTIVO' | 'INACTIVO';
+  created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+};
+
+type UsuarioForm = {
+  clinica_id: string;
+  persona_id: string;
+  email: string;
+  password: string;
+  rol: 'ADMIN' | 'DOCTOR' | 'STAFF';
+};
+
+type PersonaOption = {
+  id: string;
+  dni?: string;
+  nombres?: string;
+  apellido_paterno?: string;
+  apellido_materno?: string;
+};
+
+function ordenarClinicas(lista: Clinica[]) {
+  return [...lista].sort((a, b) => {
+    const aDeleted = Boolean(a.deleted_at);
+    const bDeleted = Boolean(b.deleted_at);
+
+    if (aDeleted !== bDeleted) {
+      return aDeleted ? 1 : -1;
+    }
+
+    if (!aDeleted && !bDeleted) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+
+    return new Date(b.deleted_at || 0).getTime() - new Date(a.deleted_at || 0).getTime();
+  });
+}
+
+function ordenarUsuarios(lista: UsuarioAdmin[]) {
+  return [...lista].sort((a, b) => {
+    const aDeleted = Boolean(a.deleted_at);
+    const bDeleted = Boolean(b.deleted_at);
+
+    if (aDeleted !== bDeleted) {
+      return aDeleted ? 1 : -1;
+    }
+
+    if (!aDeleted && !bDeleted) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+
+    return new Date(b.deleted_at || 0).getTime() - new Date(a.deleted_at || 0).getTime();
+  });
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ñ/gi, 'n')
+    .toLowerCase();
+}
+
+function onlyDigits(value: string) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function toLocalDateKey(dateValue: string) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateQuery(query: string) {
+  const normalized = query.trim();
+  if (!normalized) return null;
+
+  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const latamMatch = normalized.match(/^(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})$/);
+  if (latamMatch) {
+    return `${latamMatch[3]}-${latamMatch[2]}-${latamMatch[1]}`;
+  }
+
+  return null;
+}
+
 function getTodayLocalIso() {
   const now = new Date();
   const year = now.getFullYear();
@@ -64,7 +187,36 @@ export default function SuperadminPage() {
   const [isEntering, setIsEntering] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [selectedEndDate, setSelectedEndDate] = useState(getTodayLocalIso());
+  const [searchQuery, setSearchQuery] = useState('');
   const [openListCard, setOpenListCard] = useState<'clinicas' | 'usuarios' | null>(null);
+  const [clinicas, setClinicas] = useState<Clinica[]>([]);
+  const [clinicasLoading, setClinicasLoading] = useState(false);
+  const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
+  const [usuariosLoading, setUsuariosLoading] = useState(false);
+  const [usuarioModalOpen, setUsuarioModalOpen] = useState(false);
+  const [usuarioModalMode, setUsuarioModalMode] = useState<'create' | 'edit'>('create');
+  const [usuarioEditingId, setUsuarioEditingId] = useState<string | null>(null);
+  const [usuarioForm, setUsuarioForm] = useState<UsuarioForm>({
+    clinica_id: '',
+    persona_id: '',
+    email: '',
+    password: '',
+    rol: 'DOCTOR'
+  });
+  const [usuarioMessage, setUsuarioMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [personasOpciones, setPersonasOpciones] = useState<PersonaOption[]>([]);
+  const [clinicasOpciones, setClinicasOpciones] = useState<Clinica[]>([]);
+  const [clinicaModalOpen, setClinicaModalOpen] = useState(false);
+  const [clinicaModalMode, setClinicaModalMode] = useState<'create' | 'edit'>('create');
+  const [clinicaEditingId, setClinicaEditingId] = useState<string | null>(null);
+  const [clinicaForm, setClinicaForm] = useState<ClinicaForm>({
+    nombre: '',
+    ruc: '',
+    direccion: '',
+    telefono: '',
+    estado: 'ACTIVA'
+  });
+  const [clinicaMessage, setClinicaMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [stats, setStats] = useState<DashboardStats>({
     clinicasTotal: 0,
     clinicasActivas: 0,
@@ -110,6 +262,419 @@ export default function SuperadminPage() {
       setTimeout(() => {
         router.replace('/login');
       }, 420);
+    }
+  };
+
+  const getCsrfHeader = async () => {
+    await fetch(API_CSRF, { credentials: 'include' });
+    const token = getCookieValue('csrf_token');
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['x-csrf-token'] = token;
+    }
+    return headers;
+  };
+
+  const refreshDashboardStats = useCallback(async () => {
+    try {
+      const [clinicasResp, clinicasActivasResp, usuariosResp, sesionesResp, systemResp] = await Promise.all([
+        fetch(API_CLINICAS, { credentials: 'include' }),
+        fetch(API_CLINICAS_ACTIVAS, { credentials: 'include' }),
+        fetch(API_USUARIOS, { credentials: 'include' }),
+        fetch(API_SESIONES, { credentials: 'include' }),
+        fetch(`${API_SYSTEM_STATUS}?endDate=${selectedEndDate}`, { credentials: 'include' })
+      ]);
+
+      const clinicasData = clinicasResp.ok ? await clinicasResp.json() : { data: [] };
+      const clinicasActivasData = clinicasActivasResp.ok ? await clinicasActivasResp.json() : { data: [] };
+      const usuariosData = usuariosResp.ok ? await usuariosResp.json() : { data: [] };
+      const sesionesData = sesionesResp.ok ? await sesionesResp.json() : { data: [] };
+      const systemData = systemResp.ok ? await systemResp.json() : { data: { actividad7dias: [] } };
+
+      const clinicas = Array.isArray(clinicasData.data) ? clinicasData.data : [];
+      const clinicasActivas = Array.isArray(clinicasActivasData.data) ? clinicasActivasData.data : [];
+      const usuarios = Array.isArray(usuariosData.data) ? usuariosData.data : [];
+      const sesiones = Array.isArray(sesionesData.data) ? sesionesData.data : [];
+      const actividad = Array.isArray(systemData.data?.actividad7dias)
+        ? systemData.data.actividad7dias.map((item: { dia?: string; etiqueta?: string; total?: number }) => ({
+            dia: item.dia || '',
+            etiqueta: item.etiqueta || 'DIA',
+            total: item.total || 0
+          }))
+        : CHART_BARS_FALLBACK.map((total, index) => ({
+            dia: `${index}`,
+            etiqueta: ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'][index] || 'DIA',
+            total
+          }));
+
+      const seguridad = Array.isArray(systemData.data?.seguridad)
+        ? systemData.data.seguridad
+        : [];
+
+      const usuariosActivos = usuarios.filter((item: { estado?: string }) => item.estado === 'ACTIVO');
+
+      setStats({
+        clinicasTotal: clinicas.length,
+        clinicasActivas: clinicasActivas.length,
+        clinicasActivasNombres: clinicasActivas
+          .map((item: { nombre?: string }) => item.nombre || 'Sin nombre'),
+        usuariosTotal: usuarios.length,
+        usuariosActivos: usuariosActivos.length,
+        usuariosActivosNombres: usuariosActivos
+          .map((item: { email?: string }) => item.email || 'Sin email'),
+        sesionesActivas: sesiones.length,
+        actividadSemanal: actividad,
+        seguridad
+      });
+    } catch {
+      // Mantener fallback visual en caso de error
+    }
+  }, [selectedEndDate]);
+
+  const cargarClinicas = async (silent = false) => {
+    if (!silent) {
+      setClinicasLoading(true);
+    }
+    try {
+      const response = await fetch(API_CLINICAS, { credentials: 'include' });
+      const data = await response.json();
+      if (response.ok && Array.isArray(data.data)) {
+        setClinicas(ordenarClinicas(data.data));
+      }
+    } catch {
+      setClinicaMessage({ type: 'error', text: 'No se pudo cargar el listado de clínicas.' });
+    } finally {
+      if (!silent) {
+        setClinicasLoading(false);
+      }
+    }
+  };
+
+  const cargarUsuarios = async (silent = false) => {
+    if (!silent) {
+      setUsuariosLoading(true);
+    }
+
+    try {
+      const response = await fetch(API_USUARIOS, { credentials: 'include' });
+      const data = await response.json();
+      if (response.ok && Array.isArray(data.data)) {
+        setUsuarios(ordenarUsuarios(data.data));
+      }
+    } catch {
+      setUsuarioMessage({ type: 'error', text: 'No se pudo cargar el listado de usuarios.' });
+    } finally {
+      if (!silent) {
+        setUsuariosLoading(false);
+      }
+    }
+  };
+
+  const cargarOpcionesUsuarios = async () => {
+    try {
+      const [personasResp, clinicasResp] = await Promise.all([
+        fetch(API_PERSONAS, { credentials: 'include' }),
+        fetch(API_CLINICAS_ACTIVAS, { credentials: 'include' })
+      ]);
+
+      const personasData = personasResp.ok ? await personasResp.json() : { data: [] };
+      const clinicasData = clinicasResp.ok ? await clinicasResp.json() : { data: [] };
+
+      setPersonasOpciones(Array.isArray(personasData.data) ? personasData.data : []);
+      setClinicasOpciones(Array.isArray(clinicasData.data) ? clinicasData.data : []);
+    } catch {
+      setUsuarioMessage({ type: 'error', text: 'No se pudieron cargar personas y clínicas para usuarios.' });
+    }
+  };
+
+  const abrirModalCrearUsuario = () => {
+    setUsuarioModalMode('create');
+    setUsuarioEditingId(null);
+    setUsuarioForm({ clinica_id: '', persona_id: '', email: '', password: '', rol: 'DOCTOR' });
+    setUsuarioMessage(null);
+    setUsuarioModalOpen(true);
+  };
+
+  const abrirModalEditarUsuario = (usuario: UsuarioAdmin) => {
+    setUsuarioModalMode('edit');
+    setUsuarioEditingId(usuario.id);
+    setUsuarioForm({
+      clinica_id: usuario.clinica_id || '',
+      persona_id: usuario.persona_id,
+      email: usuario.email,
+      password: '',
+      rol: usuario.rol === 'SUPERADMIN' ? 'DOCTOR' : usuario.rol
+    });
+    setUsuarioMessage(null);
+    setUsuarioModalOpen(true);
+  };
+
+  const guardarUsuario = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setUsuarioMessage(null);
+
+    if (!usuarioFormValidation.formValido) {
+      setUsuarioMessage({ type: 'error', text: 'Completa correctamente todos los campos obligatorios.' });
+      return;
+    }
+
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const isEdit = usuarioModalMode === 'edit' && usuarioEditingId;
+      const endpoint = isEdit ? `${API_USUARIOS}/${usuarioEditingId}` : API_USUARIOS;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const payload: Record<string, string> = {
+        clinica_id: usuarioForm.clinica_id,
+        persona_id: usuarioForm.persona_id,
+        email: usuarioForm.email.trim(),
+        rol: usuarioForm.rol
+      };
+
+      if (!isEdit || usuarioForm.password.trim()) {
+        payload.password = usuarioForm.password;
+      }
+
+      const response = await fetch(endpoint, {
+        method,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...csrfHeaders
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setUsuarioMessage({ type: 'error', text: data.error || 'No se pudo guardar el usuario.' });
+        return;
+      }
+
+      setUsuarioMessage({ type: 'success', text: isEdit ? 'Usuario actualizado.' : 'Usuario creado.' });
+      if (data.data) {
+        setUsuarios((prev) => {
+          if (isEdit) {
+            return ordenarUsuarios(prev.map((item) => (item.id === data.data.id ? data.data : item)));
+          }
+          return ordenarUsuarios([data.data, ...prev]);
+        });
+      }
+
+      setUsuarioModalOpen(false);
+      await cargarUsuarios(true);
+
+      if (activeTab === 'Dashboard') {
+        await refreshDashboardStats();
+      }
+    } catch {
+      setUsuarioMessage({ type: 'error', text: 'Error de conexión al guardar usuario.' });
+    }
+  };
+
+  const desactivarUsuario = async (id: string) => {
+    setUsuarioMessage(null);
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_USUARIOS}/${id}/desactivar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setUsuarioMessage({ type: 'error', text: data.error || 'No se pudo desactivar el usuario.' });
+        return;
+      }
+
+      setUsuarioMessage({ type: 'success', text: 'Usuario desactivado.' });
+      if (data.data) {
+        setUsuarios((prev) => ordenarUsuarios(prev.map((item) => (item.id === data.data.id ? data.data : item))));
+      }
+
+      if (activeTab === 'Dashboard') {
+        await refreshDashboardStats();
+      }
+    } catch {
+      setUsuarioMessage({ type: 'error', text: 'Error de conexión al desactivar usuario.' });
+    }
+  };
+
+  const reactivarUsuario = async (id: string) => {
+    setUsuarioMessage(null);
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_USUARIOS}/${id}/reactivar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setUsuarioMessage({ type: 'error', text: data.error || 'No se pudo reactivar el usuario.' });
+        return;
+      }
+
+      setUsuarioMessage({ type: 'success', text: 'Usuario reactivado.' });
+      if (data.data) {
+        setUsuarios((prev) => ordenarUsuarios(prev.map((item) => (item.id === data.data.id ? data.data : item))));
+      }
+
+      if (activeTab === 'Dashboard') {
+        await refreshDashboardStats();
+      }
+    } catch {
+      setUsuarioMessage({ type: 'error', text: 'Error de conexión al reactivar usuario.' });
+    }
+  };
+
+  const abrirModalCrearClinica = () => {
+    setClinicaModalMode('create');
+    setClinicaEditingId(null);
+    setClinicaForm({ nombre: '', ruc: '', direccion: '', telefono: '', estado: 'ACTIVA' });
+    setClinicaMessage(null);
+    setClinicaModalOpen(true);
+  };
+
+  const abrirModalEditarClinica = (clinica: Clinica) => {
+    setClinicaModalMode('edit');
+    setClinicaEditingId(clinica.id);
+    setClinicaForm({
+      nombre: clinica.nombre || '',
+      ruc: clinica.ruc || '',
+      direccion: clinica.direccion || '',
+      telefono: clinica.telefono || '',
+      estado: clinica.estado || 'ACTIVA'
+    });
+    setClinicaMessage(null);
+    setClinicaModalOpen(true);
+  };
+
+  const guardarClinica = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setClinicaMessage(null);
+
+    if (!clinicaFormValidation.nombreValido) {
+      setClinicaMessage({ type: 'error', text: 'El nombre es obligatorio.' });
+      return;
+    }
+
+    if (!clinicaFormValidation.rucValido) {
+      setClinicaMessage({ type: 'error', text: 'El RUC debe tener exactamente 11 dígitos.' });
+      return;
+    }
+
+    if (!clinicaFormValidation.direccionValida) {
+      setClinicaMessage({ type: 'error', text: 'La dirección es obligatoria.' });
+      return;
+    }
+
+    if (!clinicaFormValidation.telefonoValido) {
+      setClinicaMessage({ type: 'error', text: 'El teléfono solo debe contener números.' });
+      return;
+    }
+
+    try {
+      const csrfHeaders = await getCsrfHeader();
+
+      const payload = {
+        nombre: clinicaForm.nombre.trim(),
+        ruc: clinicaForm.ruc,
+        direccion: clinicaForm.direccion.trim(),
+        telefono: clinicaForm.telefono,
+        estado: clinicaModalMode === 'create' ? 'ACTIVA' : clinicaForm.estado
+      };
+
+      const isEdit = clinicaModalMode === 'edit' && clinicaEditingId;
+      const endpoint = isEdit ? `${API_CLINICAS}/${clinicaEditingId}` : API_CLINICAS;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const response = await fetch(endpoint, {
+        method,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...csrfHeaders
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo guardar la clínica.' });
+        return;
+      }
+
+      setClinicaMessage({ type: 'success', text: isEdit ? 'Clínica actualizada.' : 'Clínica creada.' });
+      if (data.data) {
+        setClinicas((prev) => {
+          if (isEdit) {
+            return ordenarClinicas(prev.map((item) => (item.id === data.data.id ? data.data : item)));
+          }
+          return ordenarClinicas([data.data, ...prev]);
+        });
+      }
+      setClinicaModalOpen(false);
+      await cargarClinicas(true);
+      if (activeTab === 'Dashboard') {
+        await refreshDashboardStats();
+      }
+    } catch {
+      setClinicaMessage({ type: 'error', text: 'Error de conexión al guardar clínica.' });
+    }
+  };
+
+  const desactivarClinica = async (id: string) => {
+    setClinicaMessage(null);
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_CLINICAS}/${id}/desactivar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo desactivar la clínica.' });
+        return;
+      }
+      setClinicaMessage({ type: 'success', text: 'Clínica desactivada.' });
+      if (data.data) {
+        setClinicas((prev) => ordenarClinicas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
+      }
+      if (activeTab === 'Dashboard') {
+        await refreshDashboardStats();
+      }
+    } catch {
+      setClinicaMessage({ type: 'error', text: 'Error de conexión al desactivar clínica.' });
+    }
+  };
+
+  const reactivarClinica = async (id: string) => {
+    setClinicaMessage(null);
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_CLINICAS}/${id}/reactivar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo reactivar la clínica.' });
+        return;
+      }
+      setClinicaMessage({ type: 'success', text: 'Clínica reactivada.' });
+      if (data.data) {
+        setClinicas((prev) => ordenarClinicas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
+      }
+      if (activeTab === 'Dashboard') {
+        await refreshDashboardStats();
+      }
+    } catch {
+      setClinicaMessage({ type: 'error', text: 'Error de conexión al reactivar clínica.' });
     }
   };
 
@@ -169,67 +734,22 @@ export default function SuperadminPage() {
 
   useEffect(() => {
     if (state !== 'allowed') return;
+    if (activeTab !== 'Dashboard') return;
+    refreshDashboardStats();
+  }, [state, activeTab, refreshDashboardStats]);
 
-    const loadDashboardStats = async () => {
-      try {
-        const [clinicasResp, clinicasActivasResp, usuariosResp, sesionesResp, systemResp] = await Promise.all([
-          fetch(API_CLINICAS, { credentials: 'include' }),
-          fetch(API_CLINICAS_ACTIVAS, { credentials: 'include' }),
-          fetch(API_USUARIOS, { credentials: 'include' }),
-          fetch(API_SESIONES, { credentials: 'include' }),
-          fetch(`${API_SYSTEM_STATUS}?endDate=${selectedEndDate}`, { credentials: 'include' })
-        ]);
+  useEffect(() => {
+    if (state === 'allowed' && activeTab === 'Clinicas') {
+      cargarClinicas();
+    }
+  }, [state, activeTab]);
 
-        const clinicasData = clinicasResp.ok ? await clinicasResp.json() : { data: [] };
-        const clinicasActivasData = clinicasActivasResp.ok ? await clinicasActivasResp.json() : { data: [] };
-        const usuariosData = usuariosResp.ok ? await usuariosResp.json() : { data: [] };
-        const sesionesData = sesionesResp.ok ? await sesionesResp.json() : { data: [] };
-        const systemData = systemResp.ok ? await systemResp.json() : { data: { actividad7dias: [] } };
-
-        const clinicas = Array.isArray(clinicasData.data) ? clinicasData.data : [];
-        const clinicasActivas = Array.isArray(clinicasActivasData.data) ? clinicasActivasData.data : [];
-        const usuarios = Array.isArray(usuariosData.data) ? usuariosData.data : [];
-        const sesiones = Array.isArray(sesionesData.data) ? sesionesData.data : [];
-        const actividad = Array.isArray(systemData.data?.actividad7dias)
-          ? systemData.data.actividad7dias.map((item: { dia?: string; etiqueta?: string; total?: number }) => ({
-              dia: item.dia || '',
-              etiqueta: item.etiqueta || 'DIA',
-              total: item.total || 0
-            }))
-          : CHART_BARS_FALLBACK.map((total, index) => ({
-              dia: `${index}`,
-              etiqueta: ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'][index] || 'DIA',
-              total
-            }));
-
-        const seguridad = Array.isArray(systemData.data?.seguridad)
-          ? systemData.data.seguridad
-          : [];
-
-        const usuariosActivos = usuarios.filter((item: { estado?: string }) => item.estado === 'ACTIVO');
-
-        setStats({
-          clinicasTotal: clinicas.length,
-          clinicasActivas: clinicasActivas.length,
-          clinicasActivasNombres: clinicasActivas
-            .map((item: { nombre?: string }) => item.nombre || 'Sin nombre')
-            .slice(0, MAX_TOOLTIP_ITEMS),
-          usuariosTotal: usuarios.length,
-          usuariosActivos: usuariosActivos.length,
-          usuariosActivosNombres: usuariosActivos
-            .map((item: { email?: string }) => item.email || 'Sin email')
-            .slice(0, MAX_TOOLTIP_ITEMS),
-          sesionesActivas: sesiones.length,
-          actividadSemanal: actividad,
-          seguridad
-        });
-      } catch {
-        // Mantener fallback visual en caso de error
-      }
-    };
-
-    loadDashboardStats();
-  }, [state, selectedEndDate]);
+  useEffect(() => {
+    if (state === 'allowed' && activeTab === 'Usuarios') {
+      cargarUsuarios();
+      cargarOpcionesUsuarios();
+    }
+  }, [state, activeTab]);
 
   const clinicasProgress = stats.clinicasTotal > 0
     ? Math.round((stats.clinicasActivas / stats.clinicasTotal) * 100)
@@ -242,6 +762,168 @@ export default function SuperadminPage() {
   const sesionesProgress = stats.usuariosActivos > 0
     ? Math.min(100, Math.round((stats.sesionesActivas / stats.usuariosActivos) * 100))
     : 0;
+
+  const actividadMaxTotal = useMemo(() => {
+    const max = Math.max(...stats.actividadSemanal.map((item) => item.total || 0), 0);
+    return max > 0 ? max : 1;
+  }, [stats.actividadSemanal]);
+
+  const clinicaFormValidation = useMemo(() => {
+    const nombreValido = clinicaForm.nombre.trim().length > 0;
+    const rucValido = /^\d{11}$/.test(clinicaForm.ruc);
+    const direccionValida = clinicaForm.direccion.trim().length > 0;
+    const telefonoValido = /^\d+$/.test(clinicaForm.telefono) && clinicaForm.telefono.trim().length > 0;
+
+    return {
+      nombreValido,
+      rucValido,
+      direccionValida,
+      telefonoValido,
+      formValido: nombreValido && rucValido && direccionValida && telefonoValido
+    };
+  }, [clinicaForm]);
+
+  const usuarioFormValidation = useMemo(() => {
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+    const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(usuarioForm.email.trim());
+    const personaValida = usuarioForm.persona_id.trim().length > 0;
+    const clinicaValida = usuarioForm.clinica_id.trim().length > 0;
+    const rolValido = ['ADMIN', 'DOCTOR', 'STAFF'].includes(usuarioForm.rol);
+    const passwordValido = usuarioModalMode === 'edit'
+      ? usuarioForm.password.trim().length === 0 || passwordRegex.test(usuarioForm.password)
+      : passwordRegex.test(usuarioForm.password);
+
+    return {
+      emailValido,
+      personaValida,
+      clinicaValida,
+      rolValido,
+      passwordValido,
+      formValido: emailValido && personaValida && clinicaValida && rolValido && passwordValido
+    };
+  }, [usuarioForm, usuarioModalMode]);
+
+  const personaNombrePorId = useMemo(() => {
+    return personasOpciones.reduce<Record<string, string>>((acc, persona) => {
+      const nombreCompleto = [persona.nombres, persona.apellido_paterno, persona.apellido_materno]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      acc[persona.id] = nombreCompleto || persona.dni || persona.id;
+      return acc;
+    }, {});
+  }, [personasOpciones]);
+
+  const clinicaNombrePorId = useMemo(() => {
+    return clinicasOpciones.reduce<Record<string, string>>((acc, clinica) => {
+      acc[clinica.id] = clinica.nombre;
+      return acc;
+    }, {});
+  }, [clinicasOpciones]);
+
+  const searchHasEdgeSpaces = searchQuery.length > 0 && searchQuery !== searchQuery.trim();
+
+  const filteredClinicas = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    if (!query) return clinicas;
+
+    const queryDigits = onlyDigits(searchQuery);
+    const dateQuery = parseDateQuery(searchQuery);
+
+    return clinicas.filter((clinica) => {
+      const createdKey = toLocalDateKey(clinica.created_at);
+      if (dateQuery) {
+        return createdKey === dateQuery;
+      }
+
+      const haystack = normalizeText([
+        clinica.nombre,
+        clinica.ruc || '',
+        clinica.direccion || '',
+        clinica.telefono || '',
+        clinica.deleted_at ? 'inactiva desactivada' : 'activa',
+        createdKey,
+        new Date(clinica.created_at).toLocaleDateString('es-PE')
+      ].join(' '));
+
+      if (haystack.includes(query)) return true;
+
+      if (queryDigits) {
+        const clinicaDigits = onlyDigits([
+          clinica.ruc || '',
+          clinica.telefono || '',
+          clinica.created_at
+        ].join(' '));
+        return clinicaDigits.includes(queryDigits);
+      }
+
+      return false;
+    });
+  }, [clinicas, searchQuery, searchHasEdgeSpaces]);
+
+  const filteredClinicasActivasNombres = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    const source = stats.clinicasActivasNombres;
+    if (!query) return source.slice(0, MAX_TOOLTIP_ITEMS);
+    return source.filter((item) => normalizeText(item).includes(query)).slice(0, MAX_TOOLTIP_ITEMS);
+  }, [stats.clinicasActivasNombres, searchQuery, searchHasEdgeSpaces]);
+
+  const filteredUsuariosActivosNombres = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    const source = stats.usuariosActivosNombres;
+    if (!query) return source.slice(0, MAX_TOOLTIP_ITEMS);
+    return source.filter((item) => normalizeText(item).includes(query)).slice(0, MAX_TOOLTIP_ITEMS);
+  }, [stats.usuariosActivosNombres, searchQuery, searchHasEdgeSpaces]);
+
+  const filteredSeguridad = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    if (!query) return stats.seguridad;
+    return stats.seguridad.filter((item) =>
+      normalizeText(`${item.nombre} ${item.valor}`).includes(query)
+    );
+  }, [stats.seguridad, searchQuery, searchHasEdgeSpaces]);
+
+  const filteredUsuarios = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    if (!query) return usuarios;
+
+    const queryDigits = onlyDigits(searchQuery);
+    return usuarios.filter((usuarioItem) => {
+      const personaNombre = personaNombrePorId[usuarioItem.persona_id] || usuarioItem.persona_id;
+      const clinicaNombre = clinicaNombrePorId[usuarioItem.clinica_id || ''] || usuarioItem.clinica_id || '-';
+      const haystack = normalizeText([
+        usuarioItem.email,
+        usuarioItem.rol,
+        usuarioItem.estado,
+        personaNombre,
+        clinicaNombre,
+        new Date(usuarioItem.created_at).toLocaleDateString('es-PE')
+      ].join(' '));
+
+      if (haystack.includes(query)) return true;
+
+      if (queryDigits) {
+        const userDigits = onlyDigits([
+          usuarioItem.email,
+          usuarioItem.created_at,
+          personaNombre
+        ].join(' '));
+        return userDigits.includes(queryDigits);
+      }
+
+      return false;
+    });
+  }, [usuarios, searchQuery, searchHasEdgeSpaces, personaNombrePorId, clinicaNombrePorId]);
 
   if (state === 'loading') {
     return (
@@ -319,6 +1001,8 @@ export default function SuperadminPage() {
               className="superadmin-search"
               type="text"
               placeholder="Buscar"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
             />
           </header>
 
@@ -359,8 +1043,8 @@ export default function SuperadminPage() {
                     <div className="metric-popover">
                       <p>Clínicas activas (máx. 10)</p>
                       <ul>
-                        {stats.clinicasActivasNombres.length > 0 ? (
-                          stats.clinicasActivasNombres.map((nombre) => <li key={nombre}>{nombre}</li>)
+                        {filteredClinicasActivasNombres.length > 0 ? (
+                          filteredClinicasActivasNombres.map((nombre) => <li key={nombre}>{nombre}</li>)
                         ) : (
                           <li>Sin datos disponibles</li>
                         )}
@@ -391,8 +1075,8 @@ export default function SuperadminPage() {
                     <div className="metric-popover">
                       <p>Usuarios activos (máx. 10)</p>
                       <ul>
-                        {stats.usuariosActivosNombres.length > 0 ? (
-                          stats.usuariosActivosNombres.map((nombre) => <li key={nombre}>{nombre}</li>)
+                        {filteredUsuariosActivosNombres.length > 0 ? (
+                          filteredUsuariosActivosNombres.map((nombre) => <li key={nombre}>{nombre}</li>)
                         ) : (
                           <li>Sin datos disponibles</li>
                         )}
@@ -428,7 +1112,14 @@ export default function SuperadminPage() {
                 <div className="bars-wrap" aria-hidden="true">
                   {stats.actividadSemanal.map((item) => (
                     <div key={`${item.dia}-${item.etiqueta}`} className="bar-col">
-                      <div className="bar" style={{ height: `${Math.max(14, item.total * 10)}px` }} />
+                      <div className="bar-track">
+                        <div
+                          className="bar"
+                          style={{
+                            height: `${Math.max(8, Math.round((item.total / actividadMaxTotal) * 100))}%`
+                          }}
+                        />
+                      </div>
                       <span className="bar-day-label">{item.etiqueta}</span>
                     </div>
                   ))}
@@ -437,9 +1128,9 @@ export default function SuperadminPage() {
 
               <article className="superadmin-card card-small">
                 <h3>Implementos de seguridad</h3>
-                {stats.seguridad.length > 0 ? (
+                {filteredSeguridad.length > 0 ? (
                   <ul className="security-list">
-                    {stats.seguridad.map((item) => (
+                    {filteredSeguridad.map((item) => (
                       <li key={`${item.nombre}-${item.valor}`}>
                         <strong>{item.nombre}:</strong> {item.valor}
                       </li>
@@ -449,6 +1140,300 @@ export default function SuperadminPage() {
                   <p>Sin datos de seguridad disponibles.</p>
                 )}
               </article>
+            </section>
+          ) : activeTab === 'Clinicas' ? (
+            <section className="superadmin-grid clinicas-grid">
+              <article className="superadmin-card clinicas-card">
+                <div className="clinicas-header">
+                  <h3>Listado de clínicas</h3>
+                  <button type="button" className="clinica-btn-primary" onClick={abrirModalCrearClinica}>
+                    Nueva clínica
+                  </button>
+                </div>
+
+                {clinicaMessage && (
+                  <p className={`clinica-message ${clinicaMessage.type}`}>{clinicaMessage.text}</p>
+                )}
+
+                <div className="clinicas-table-wrap">
+                  <table className="clinicas-table">
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>RUC</th>
+                        <th>Dirección</th>
+                        <th>Teléfono</th>
+                        <th>Estado</th>
+                        <th>Creación</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clinicasLoading ? (
+                        <tr>
+                          <td colSpan={7}>Cargando clínicas...</td>
+                        </tr>
+                      ) : filteredClinicas.length === 0 ? (
+                        <tr>
+                          <td colSpan={7}>No hay resultados para la búsqueda.</td>
+                        </tr>
+                      ) : (
+                        filteredClinicas.map((clinica) => {
+                          const desactivada = Boolean(clinica.deleted_at);
+                          return (
+                            <tr key={clinica.id} className={desactivada ? 'clinica-row-disabled' : ''}>
+                              <td>{clinica.nombre}</td>
+                              <td>{clinica.ruc || '-'}</td>
+                              <td>{clinica.direccion || '-'}</td>
+                              <td>{clinica.telefono || '-'}</td>
+                              <td>{desactivada ? 'INACTIVA' : 'ACTIVA'}</td>
+                              <td>{new Date(clinica.created_at).toLocaleString('es-PE')}</td>
+                              <td>
+                                <div className="clinica-actions">
+                                  <button type="button" onClick={() => abrirModalEditarClinica(clinica)}>Editar</button>
+                                  {desactivada ? (
+                                    <button type="button" className="reactivar" onClick={() => reactivarClinica(clinica.id)}>
+                                      Reactivar
+                                    </button>
+                                  ) : (
+                                    <button type="button" className="desactivar" onClick={() => desactivarClinica(clinica.id)}>
+                                      Desactivar
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
+              {clinicaModalOpen && (
+                <div className="clinica-modal-backdrop" role="dialog" aria-modal="true">
+                  <section className="clinica-modal">
+                    <h3>{clinicaModalMode === 'create' ? 'Nueva clínica' : 'Editar clínica'}</h3>
+
+                    <form onSubmit={guardarClinica} className="clinica-form">
+                      <label>
+                        Nombre
+                        <input
+                          value={clinicaForm.nombre}
+                          onChange={(event) => setClinicaForm((prev) => ({ ...prev, nombre: event.target.value }))}
+                          required
+                        />
+                      </label>
+
+                      <label>
+                        RUC
+                        <input
+                          value={clinicaForm.ruc}
+                          onChange={(event) => {
+                            const numericValue = event.target.value.replace(/\D/g, '').slice(0, 11);
+                            setClinicaForm((prev) => ({ ...prev, ruc: numericValue }));
+                          }}
+                          placeholder="11 dígitos"
+                          maxLength={11}
+                          inputMode="numeric"
+                          pattern="\d{11}"
+                          required
+                        />
+                        {clinicaForm.ruc.length > 0 && !clinicaFormValidation.rucValido ? (
+                          <span className="clinica-field-error">El RUC debe tener exactamente 11 dígitos.</span>
+                        ) : null}
+                      </label>
+
+                      <label>
+                        Dirección
+                        <input
+                          value={clinicaForm.direccion}
+                          onChange={(event) => setClinicaForm((prev) => ({ ...prev, direccion: event.target.value }))}
+                          required
+                        />
+                      </label>
+
+                      <label>
+                        Teléfono
+                        <input
+                          value={clinicaForm.telefono}
+                          onChange={(event) => {
+                            const numericValue = event.target.value.replace(/\D/g, '').slice(0, 20);
+                            setClinicaForm((prev) => ({ ...prev, telefono: numericValue }));
+                          }}
+                          inputMode="numeric"
+                          pattern="\d+"
+                          required
+                        />
+                      </label>
+
+                      <div className="clinica-modal-actions">
+                        <button type="button" className="clinica-btn-cancel" onClick={() => setClinicaModalOpen(false)}>Cancelar</button>
+                        <button type="submit" className="clinica-btn-primary clinica-btn-save" disabled={!clinicaFormValidation.formValido}>Guardar</button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              )}
+            </section>
+          ) : activeTab === 'Usuarios' ? (
+            <section className="superadmin-grid clinicas-grid">
+              <article className="superadmin-card clinicas-card">
+                <div className="clinicas-header">
+                  <h3>Listado de usuarios</h3>
+                  <button type="button" className="clinica-btn-primary" onClick={abrirModalCrearUsuario}>
+                    Nuevo usuario
+                  </button>
+                </div>
+
+                {usuarioMessage && (
+                  <p className={`clinica-message ${usuarioMessage.type}`}>{usuarioMessage.text}</p>
+                )}
+
+                <div className="clinicas-table-wrap">
+                  <table className="clinicas-table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>Rol</th>
+                        <th>Persona</th>
+                        <th>Clínica</th>
+                        <th>Estado</th>
+                        <th>Creación</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usuariosLoading ? (
+                        <tr>
+                          <td colSpan={7}>Cargando usuarios...</td>
+                        </tr>
+                      ) : filteredUsuarios.length === 0 ? (
+                        <tr>
+                          <td colSpan={7}>No hay resultados para la búsqueda.</td>
+                        </tr>
+                      ) : (
+                        filteredUsuarios.map((usuarioItem) => {
+                          const desactivado = Boolean(usuarioItem.deleted_at);
+                          return (
+                            <tr key={usuarioItem.id} className={desactivado ? 'clinica-row-disabled' : ''}>
+                              <td>{usuarioItem.email}</td>
+                              <td>{usuarioItem.rol}</td>
+                              <td>{personaNombrePorId[usuarioItem.persona_id] || usuarioItem.persona_id}</td>
+                              <td>{clinicaNombrePorId[usuarioItem.clinica_id || ''] || usuarioItem.clinica_id || '-'}</td>
+                              <td>{desactivado ? 'INACTIVO' : usuarioItem.estado}</td>
+                              <td>{new Date(usuarioItem.created_at).toLocaleString('es-PE')}</td>
+                              <td>
+                                <div className="clinica-actions">
+                                  <button type="button" onClick={() => abrirModalEditarUsuario(usuarioItem)}>Editar</button>
+                                  {desactivado ? (
+                                    <button type="button" className="reactivar" onClick={() => reactivarUsuario(usuarioItem.id)}>
+                                      Reactivar
+                                    </button>
+                                  ) : (
+                                    <button type="button" className="desactivar" onClick={() => desactivarUsuario(usuarioItem.id)}>
+                                      Desactivar
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
+              {usuarioModalOpen && (
+                <div className="clinica-modal-backdrop" role="dialog" aria-modal="true">
+                  <section className="clinica-modal">
+                    <h3>{usuarioModalMode === 'create' ? 'Nuevo usuario' : 'Editar usuario'}</h3>
+
+                    <form onSubmit={guardarUsuario} className="clinica-form">
+                      <label>
+                        Persona
+                        <select
+                          value={usuarioForm.persona_id}
+                          onChange={(event) => setUsuarioForm((prev) => ({ ...prev, persona_id: event.target.value }))}
+                          required
+                        >
+                          <option value="">Seleccionar persona</option>
+                          {personasOpciones.map((persona) => {
+                            const nombreCompleto = [persona.nombres, persona.apellido_paterno, persona.apellido_materno]
+                              .filter(Boolean)
+                              .join(' ')
+                              .trim();
+                            return (
+                              <option key={persona.id} value={persona.id}>
+                                {nombreCompleto || persona.dni || persona.id}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </label>
+
+                      <label>
+                        Clínica
+                        <select
+                          value={usuarioForm.clinica_id}
+                          onChange={(event) => setUsuarioForm((prev) => ({ ...prev, clinica_id: event.target.value }))}
+                          required
+                        >
+                          <option value="">Seleccionar clínica</option>
+                          {clinicasOpciones.map((clinica) => (
+                            <option key={clinica.id} value={clinica.id}>{clinica.nombre}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label>
+                        Email
+                        <input
+                          type="email"
+                          value={usuarioForm.email}
+                          onChange={(event) => setUsuarioForm((prev) => ({ ...prev, email: event.target.value }))}
+                          required
+                        />
+                      </label>
+
+                      <label>
+                        Rol
+                        <select
+                          value={usuarioForm.rol}
+                          onChange={(event) => setUsuarioForm((prev) => ({ ...prev, rol: event.target.value as UsuarioForm['rol'] }))}
+                          required
+                        >
+                          <option value="ADMIN">ADMIN</option>
+                          <option value="DOCTOR">DOCTOR</option>
+                          <option value="STAFF">STAFF</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Contraseña {usuarioModalMode === 'edit' ? '(opcional)' : ''}
+                        <input
+                          type="password"
+                          value={usuarioForm.password}
+                          onChange={(event) => setUsuarioForm((prev) => ({ ...prev, password: event.target.value }))}
+                          required={usuarioModalMode === 'create'}
+                          minLength={8}
+                        />
+                        {usuarioForm.password.length > 0 && !usuarioFormValidation.passwordValido ? (
+                          <span className="clinica-field-error">Mínimo 8 caracteres con mayúscula, minúscula y número.</span>
+                        ) : null}
+                      </label>
+
+                      <div className="clinica-modal-actions">
+                        <button type="button" className="clinica-btn-cancel" onClick={() => setUsuarioModalOpen(false)}>Cancelar</button>
+                        <button type="submit" className="clinica-btn-primary clinica-btn-save" disabled={!usuarioFormValidation.formValido}>Guardar</button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              )}
             </section>
           ) : (
             <section className="superadmin-grid">
