@@ -1143,6 +1143,17 @@ export default function SuperadminPage() {
   }, [router]);
 
   useEffect(() => {
+    // Si no está autenticado/autorizado, redirigir a login
+    if (state === 'denied') {
+      localStorage.removeItem('sessionId');
+      const timeout = setTimeout(() => {
+        router.push('/login');
+      }, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [state, router]);
+
+  useEffect(() => {
     if (state !== 'allowed') return;
     const frame = requestAnimationFrame(() => setIsEntering(true));
     return () => cancelAnimationFrame(frame);
