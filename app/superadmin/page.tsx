@@ -30,7 +30,7 @@ type UsuarioSesion = {
   clinica_id?: string | null;
 };
 
-const TABS = ['Dashboard', 'Clinicas', 'Usuarios', 'Perosnas', 'Sesiones'] as const;
+const TABS = ['Dashboard', 'Clinicas', 'Usuarios', 'Personas', 'Sesiones'] as const;
 type SuperadminTab = (typeof TABS)[number];
 
 const CHART_BARS_FALLBACK = [32, 140, 182, 221, 104, 139, 88];
@@ -97,6 +97,40 @@ type PersonaOption = {
   apellido_materno?: string;
 };
 
+type PersonaAdmin = {
+  id: string;
+  dni: string;
+  nombres: string;
+  apellido_paterno: string;
+  apellido_materno: string;
+  sexo: 'MASCULINO' | 'FEMENINO';
+  fecha_nacimiento: string;
+  created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+};
+
+type PersonaForm = {
+  dni: string;
+  nombres: string;
+  apellido_paterno: string;
+  apellido_materno: string;
+  sexo: 'MASCULINO' | 'FEMENINO';
+  fecha_nacimiento: string;
+};
+
+type Sesion = {
+  id: string;
+  usuario_id: string;
+  email?: string;
+  rol?: string;
+  clinica_id?: string | null;
+  expires_at: string;
+  revoked_at?: string | null;
+  created_at: string;
+};
+
 function ordenarClinicas(lista: Clinica[]) {
   return [...lista].sort((a, b) => {
     const aDeleted = Boolean(a.deleted_at);
@@ -115,6 +149,23 @@ function ordenarClinicas(lista: Clinica[]) {
 }
 
 function ordenarUsuarios(lista: UsuarioAdmin[]) {
+  return [...lista].sort((a, b) => {
+    const aDeleted = Boolean(a.deleted_at);
+    const bDeleted = Boolean(b.deleted_at);
+
+    if (aDeleted !== bDeleted) {
+      return aDeleted ? 1 : -1;
+    }
+
+    if (!aDeleted && !bDeleted) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+
+    return new Date(b.deleted_at || 0).getTime() - new Date(a.deleted_at || 0).getTime();
+  });
+}
+
+function ordenarPersonas(lista: PersonaAdmin[]) {
   return [...lista].sort((a, b) => {
     const aDeleted = Boolean(a.deleted_at);
     const bDeleted = Boolean(b.deleted_at);
@@ -177,6 +228,46 @@ function getTodayLocalIso() {
   return `${year}-${month}-${day}`;
 }
 
+function Pagination({
+  totalItems,
+  itemsPerPage,
+  currentPage,
+  onPageChange
+}: {
+  totalItems: number;
+  itemsPerPage: number;
+  currentPage: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="pagination-container" style={{ marginTop: '16px', textAlign: 'center' }}>
+      {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+        <button
+          key={pageNum}
+          onClick={() => onPageChange(pageNum)}
+          style={{
+            padding: '8px 12px',
+            margin: '0 4px',
+            backgroundColor: currentPage === pageNum ? '#3498db' : '#f0f0f0',
+            color: currentPage === pageNum ? '#fff' : '#333',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: currentPage === pageNum ? 'bold' : 'normal'
+          }}
+        >
+          {pageNum}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function SuperadminPage() {
   const router = useRouter();
   const [state, setState] = useState<SessionState>('loading');
@@ -201,11 +292,35 @@ export default function SuperadminPage() {
     persona_id: '',
     email: '',
     password: '',
-    rol: 'DOCTOR'
+    rol: 'ADMIN'
   });
   const [usuarioMessage, setUsuarioMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [personasOpciones, setPersonasOpciones] = useState<PersonaOption[]>([]);
+  const [personas, setPersonas] = useState<PersonaAdmin[]>([]);
+  const [personasLoading, setPersonasLoading] = useState(false);
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [personaModalMode, setPersonaModalMode] = useState<'create' | 'edit'>('create');
+  const [personaCreateMode, setPersonaCreateMode] = useState<'dni' | 'manual'>('dni');
+  const [personaEditingId, setPersonaEditingId] = useState<string | null>(null);
+  const [personaForm, setPersonaForm] = useState<PersonaForm>({
+    dni: '',
+    nombres: '',
+    apellido_paterno: '',
+    apellido_materno: '',
+    sexo: 'MASCULINO',
+    fecha_nacimiento: ''
+  });
+  const [personaMessage, setPersonaMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [clinicaPaginaActual, setClinicaPaginaActual] = useState(1);
+  const [usuarioPaginaActual, setUsuarioPaginaActual] = useState(1);
+  const [personaPaginaActual, setPersonaPaginaActual] = useState(1);
+  const [sesionPaginaActual, setSesionPaginaActual] = useState(1);
+  const ITEMS_POR_PAGINA = 9;
+  const [sesiones, setSesiones] = useState<Sesion[]>([]);
+  const [sesionesLoading, setSesionesLoading] = useState(false);
+  const [sessionIdActual, setSessionIdActual] = useState<string | null>(null);
   const [clinicasOpciones, setClinicasOpciones] = useState<Clinica[]>([]);
+  const [globalMessage, setGlobalMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [clinicaModalOpen, setClinicaModalOpen] = useState(false);
   const [clinicaModalMode, setClinicaModalMode] = useState<'create' | 'edit'>('create');
   const [clinicaEditingId, setClinicaEditingId] = useState<string | null>(null);
@@ -390,7 +505,7 @@ export default function SuperadminPage() {
   const abrirModalCrearUsuario = () => {
     setUsuarioModalMode('create');
     setUsuarioEditingId(null);
-    setUsuarioForm({ clinica_id: '', persona_id: '', email: '', password: '', rol: 'DOCTOR' });
+    setUsuarioForm({ clinica_id: '', persona_id: '', email: '', password: '', rol: 'ADMIN' });
     setUsuarioMessage(null);
     setUsuarioModalOpen(true);
   };
@@ -403,7 +518,7 @@ export default function SuperadminPage() {
       persona_id: usuario.persona_id,
       email: usuario.email,
       password: '',
-      rol: usuario.rol === 'SUPERADMIN' ? 'DOCTOR' : usuario.rol
+      rol: usuario.rol === 'SUPERADMIN' ? 'ADMIN' : usuario.rol
     });
     setUsuarioMessage(null);
     setUsuarioModalOpen(true);
@@ -448,10 +563,13 @@ export default function SuperadminPage() {
       const data = await response.json();
       if (!response.ok) {
         setUsuarioMessage({ type: 'error', text: data.error || 'No se pudo guardar el usuario.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo guardar el usuario.' });
         return;
       }
 
-      setUsuarioMessage({ type: 'success', text: isEdit ? 'Usuario actualizado.' : 'Usuario creado.' });
+      const successMsg = isEdit ? 'Usuario actualizado.' : 'Usuario creado.';
+      setUsuarioMessage({ type: 'success', text: successMsg });
+      setGlobalMessage({ type: 'success', text: successMsg });
       if (data.data) {
         setUsuarios((prev) => {
           if (isEdit) {
@@ -485,10 +603,12 @@ export default function SuperadminPage() {
       const data = await response.json();
       if (!response.ok) {
         setUsuarioMessage({ type: 'error', text: data.error || 'No se pudo desactivar el usuario.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo desactivar el usuario.' });
         return;
       }
 
       setUsuarioMessage({ type: 'success', text: 'Usuario desactivado.' });
+      setGlobalMessage({ type: 'success', text: 'Usuario desactivado.' });
       if (data.data) {
         setUsuarios((prev) => ordenarUsuarios(prev.map((item) => (item.id === data.data.id ? data.data : item))));
       }
@@ -514,10 +634,12 @@ export default function SuperadminPage() {
       const data = await response.json();
       if (!response.ok) {
         setUsuarioMessage({ type: 'error', text: data.error || 'No se pudo reactivar el usuario.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo reactivar el usuario.' });
         return;
       }
 
       setUsuarioMessage({ type: 'success', text: 'Usuario reactivado.' });
+      setGlobalMessage({ type: 'success', text: 'Usuario reactivado.' });
       if (data.data) {
         setUsuarios((prev) => ordenarUsuarios(prev.map((item) => (item.id === data.data.id ? data.data : item))));
       }
@@ -536,6 +658,293 @@ export default function SuperadminPage() {
     setClinicaForm({ nombre: '', ruc: '', direccion: '', telefono: '', estado: 'ACTIVA' });
     setClinicaMessage(null);
     setClinicaModalOpen(true);
+  };
+
+  const cargarPersonas = async (silent = false) => {
+    if (!silent) {
+      setPersonasLoading(true);
+    }
+
+    try {
+      const response = await fetch(API_PERSONAS, { credentials: 'include' });
+      const data = await response.json();
+      if (response.ok && Array.isArray(data.data)) {
+        setPersonas(ordenarPersonas(data.data));
+      }
+    } catch {
+      setPersonaMessage({ type: 'error', text: 'No se pudo cargar el listado de personas.' });
+    } finally {
+      if (!silent) {
+        setPersonasLoading(false);
+      }
+    }
+  };
+
+  const cargarSesiones = async (silent = false) => {
+    if (!silent) {
+      setSesionesLoading(true);
+    }
+
+    try {
+      const response = await fetch(API_SESIONES, { credentials: 'include' });
+      const data = await response.json();
+      if (response.ok && Array.isArray(data.data)) {
+        setSesiones(data.data);
+      }
+    } catch {
+      setGlobalMessage({ type: 'error', text: 'No se pudo cargar el listado de sesiones.' });
+    } finally {
+      if (!silent) {
+        setSesionesLoading(false);
+      }
+    }
+  };
+
+  const revocarSesion = async (sesionId: string) => {
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_SESIONES}/${sesionId}/revocar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+
+      if (response.ok) {
+        // Remover la sesión de la lista localmente
+        setSesiones((prev) => prev.filter((sesion) => sesion.id !== sesionId));
+
+        // Si es la sesión actual, redirigir a login
+        const sesionIdActualFromStorage = localStorage.getItem('sessionId');
+        if (sesionId === sesionIdActualFromStorage) {
+          localStorage.removeItem('sessionId');
+          setGlobalMessage({ type: 'success', text: 'Sesión revocada. Redirigiendo a login...' });
+          setTimeout(() => {
+            router.push('/login');
+          }, 1000);
+        } else {
+          setGlobalMessage({ type: 'success', text: 'Sesión revocada correctamente.' });
+        }
+      } else {
+        setGlobalMessage({ type: 'error', text: 'No se pudo revocar la sesión.' });
+      }
+    } catch {
+      setGlobalMessage({ type: 'error', text: 'Error al revocar la sesión.' });
+    }
+  };
+
+  const abrirModalCrearPersona = () => {
+    setPersonaModalMode('create');
+    setPersonaCreateMode('dni');
+    setPersonaEditingId(null);
+    setPersonaForm({
+      dni: '',
+      nombres: '',
+      apellido_paterno: '',
+      apellido_materno: '',
+      sexo: 'MASCULINO',
+      fecha_nacimiento: ''
+    });
+    setPersonaMessage(null);
+    setPersonaModalOpen(true);
+  };
+
+  const abrirModalEditarPersona = (persona: PersonaAdmin) => {
+    setPersonaModalMode('edit');
+    setPersonaCreateMode('manual');
+    setPersonaEditingId(persona.id);
+    setPersonaForm({
+      dni: persona.dni || '',
+      nombres: persona.nombres || '',
+      apellido_paterno: persona.apellido_paterno || '',
+      apellido_materno: persona.apellido_materno || '',
+      sexo: persona.sexo || 'MASCULINO',
+      fecha_nacimiento: persona.fecha_nacimiento ? String(persona.fecha_nacimiento).slice(0, 10) : ''
+    });
+    setPersonaMessage(null);
+    setPersonaModalOpen(true);
+  };
+
+  const guardarPersona = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPersonaMessage(null);
+
+    if (personaModalMode === 'create' && personaCreateMode === 'dni') {
+      if (!personaFormValidation.dniValido) {
+        setPersonaMessage({ type: 'error', text: 'El DNI debe tener exactamente 8 dígitos.' });
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_PERSONAS}/dni/${personaForm.dni}`, {
+          credentials: 'include'
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          setPersonaMessage({ type: 'error', text: data.error || 'No se pudo crear/buscar la persona por DNI.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo crear/buscar la persona por DNI.' });
+        return;
+      }
+
+      const successMsg = data.fuente === 'API' ? 'Persona creada por consulta DNI.' : 'Persona encontrada en BD por DNI.';
+      setPersonaMessage({
+        type: 'success',
+        text: successMsg
+      });
+      setGlobalMessage({
+        type: 'success',
+        text: successMsg
+      });
+
+      if (data.data) {
+        setPersonas((prev) => {
+          const existe = prev.some((item) => item.id === data.data.id);
+          if (existe) {
+            return ordenarPersonas(prev.map((item) => (item.id === data.data.id ? data.data : item)));
+          }
+          return ordenarPersonas([data.data, ...prev]);
+          });
+          setPersonasOpciones((prev) => {
+            const existe = prev.some((item) => item.id === data.data.id);
+            if (existe) {
+              return prev.map((item) => (item.id === data.data.id ? data.data : item));
+            }
+            return [data.data, ...prev];
+          });
+        }
+
+        setPersonaModalOpen(false);
+        await cargarPersonas(true);
+        await cargarOpcionesUsuarios();
+        return;
+      } catch {
+        setPersonaMessage({ type: 'error', text: 'Error de conexión al procesar DNI.' });
+        return;
+      }
+    }
+
+    if (!personaFormValidation.formValidoManual) {
+      setPersonaMessage({ type: 'error', text: 'Completa correctamente todos los campos requeridos.' });
+      return;
+    }
+
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const isEdit = personaModalMode === 'edit' && personaEditingId;
+      const endpoint = isEdit ? `${API_PERSONAS}/${personaEditingId}` : API_PERSONAS;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const payload = {
+        dni: personaForm.dni,
+        nombres: personaForm.nombres.trim(),
+        apellido_paterno: personaForm.apellido_paterno.trim(),
+        apellido_materno: personaForm.apellido_materno.trim(),
+        sexo: personaForm.sexo,
+        fecha_nacimiento: personaForm.fecha_nacimiento
+      };
+
+      const response = await fetch(endpoint, {
+        method,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...csrfHeaders
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setPersonaMessage({ type: 'error', text: data.error || 'No se pudo guardar la persona.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo guardar la persona.' });
+        return;
+      }
+
+      const successMsg = isEdit ? 'Persona actualizada.' : 'Persona creada.';
+      setPersonaMessage({ type: 'success', text: successMsg });
+      setGlobalMessage({ type: 'success', text: successMsg });
+
+      if (data.data) {
+        setPersonas((prev) => {
+          if (isEdit) {
+            return ordenarPersonas(prev.map((item) => (item.id === data.data.id ? data.data : item)));
+          }
+          return ordenarPersonas([data.data, ...prev]);
+        });
+
+        setPersonasOpciones((prev) => {
+          const existe = prev.some((item) => item.id === data.data.id);
+          if (existe) {
+            return prev.map((item) => (item.id === data.data.id ? data.data : item));
+          }
+          return [data.data, ...prev];
+        });
+      }
+
+      setPersonaModalOpen(false);
+      await cargarPersonas(true);
+      await cargarOpcionesUsuarios();
+    } catch {
+      setPersonaMessage({ type: 'error', text: 'Error de conexión al guardar persona.' });
+    }
+  };
+
+  const desactivarPersona = async (id: string) => {
+    setPersonaMessage(null);
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_PERSONAS}/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setPersonaMessage({ type: 'error', text: data.error || 'No se pudo desactivar la persona.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo desactivar la persona.' });
+        return;
+      }
+
+      setPersonaMessage({ type: 'success', text: 'Persona desactivada (soft delete).' });
+      setGlobalMessage({ type: 'success', text: 'Persona desactivada (soft delete).' });
+      if (data.data) {
+        setPersonas((prev) => ordenarPersonas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
+      }
+      await cargarPersonas(true);
+      await cargarOpcionesUsuarios();
+    } catch {
+      setPersonaMessage({ type: 'error', text: 'Error de conexión al desactivar persona.' });
+    }
+  };
+
+  const reactivarPersona = async (id: string) => {
+    setPersonaMessage(null);
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_PERSONAS}/${id}/reactivar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setPersonaMessage({ type: 'error', text: data.error || 'No se pudo reactivar la persona.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo reactivar la persona.' });
+        return;
+      }
+
+      setPersonaMessage({ type: 'success', text: 'Persona reactivada.' });
+      setGlobalMessage({ type: 'success', text: 'Persona reactivada.' });
+      if (data.data) {
+        setPersonas((prev) => ordenarPersonas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
+      }
+      await cargarPersonas(true);
+      await cargarOpcionesUsuarios();
+    } catch {
+      setPersonaMessage({ type: 'error', text: 'Error de conexión al reactivar persona.' });
+    }
   };
 
   const abrirModalEditarClinica = (clinica: Clinica) => {
@@ -604,10 +1013,13 @@ export default function SuperadminPage() {
       const data = await response.json();
       if (!response.ok) {
         setClinicaMessage({ type: 'error', text: data.error || 'No se pudo guardar la clínica.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo guardar la clínica.' });
         return;
       }
 
-      setClinicaMessage({ type: 'success', text: isEdit ? 'Clínica actualizada.' : 'Clínica creada.' });
+      const successMsg = isEdit ? 'Clínica actualizada.' : 'Clínica creada.';
+      setClinicaMessage({ type: 'success', text: successMsg });
+      setGlobalMessage({ type: 'success', text: successMsg });
       if (data.data) {
         setClinicas((prev) => {
           if (isEdit) {
@@ -638,9 +1050,11 @@ export default function SuperadminPage() {
       const data = await response.json();
       if (!response.ok) {
         setClinicaMessage({ type: 'error', text: data.error || 'No se pudo desactivar la clínica.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo desactivar la clínica.' });
         return;
       }
       setClinicaMessage({ type: 'success', text: 'Clínica desactivada.' });
+      setGlobalMessage({ type: 'success', text: 'Clínica desactivada.' });
       if (data.data) {
         setClinicas((prev) => ordenarClinicas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
       }
@@ -664,9 +1078,11 @@ export default function SuperadminPage() {
       const data = await response.json();
       if (!response.ok) {
         setClinicaMessage({ type: 'error', text: data.error || 'No se pudo reactivar la clínica.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo reactivar la clínica.' });
         return;
       }
       setClinicaMessage({ type: 'success', text: 'Clínica reactivada.' });
+      setGlobalMessage({ type: 'success', text: 'Clínica reactivada.' });
       if (data.data) {
         setClinicas((prev) => ordenarClinicas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
       }
@@ -733,6 +1149,12 @@ export default function SuperadminPage() {
   }, [state]);
 
   useEffect(() => {
+    // Obtener el ID de la sesión actual del localStorage
+    const id = localStorage.getItem('sessionId');
+    setSessionIdActual(id);
+  }, []);
+
+  useEffect(() => {
     if (state !== 'allowed') return;
     if (activeTab !== 'Dashboard') return;
     refreshDashboardStats();
@@ -750,6 +1172,26 @@ export default function SuperadminPage() {
       cargarOpcionesUsuarios();
     }
   }, [state, activeTab]);
+
+  useEffect(() => {
+    if (state === 'allowed' && activeTab === 'Personas') {
+      cargarPersonas();
+    }
+  }, [state, activeTab]);
+
+  useEffect(() => {
+    if (state === 'allowed' && activeTab === 'Sesiones') {
+      cargarSesiones();
+    }
+  }, [state, activeTab]);
+
+  useEffect(() => {
+    if (!globalMessage) return;
+    const timer = setTimeout(() => {
+      setGlobalMessage(null);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [globalMessage]);
 
   const clinicasProgress = stats.clinicasTotal > 0
     ? Math.round((stats.clinicasActivas / stats.clinicasTotal) * 100)
@@ -802,6 +1244,31 @@ export default function SuperadminPage() {
       formValido: emailValido && personaValida && clinicaValida && rolValido && passwordValido
     };
   }, [usuarioForm, usuarioModalMode]);
+
+  const personaFormValidation = useMemo(() => {
+    const dniValido = /^\d{8}$/.test(personaForm.dni);
+    const nombresValidos = personaForm.nombres.trim().length > 0;
+    const apellidoPaternoValido = personaForm.apellido_paterno.trim().length > 0;
+    const apellidoMaternoValido = personaForm.apellido_materno.trim().length > 0;
+    const sexoValido = ['MASCULINO', 'FEMENINO'].includes(personaForm.sexo);
+    const fechaNacimientoValida = /^\d{4}-\d{2}-\d{2}$/.test(personaForm.fecha_nacimiento);
+
+    return {
+      dniValido,
+      nombresValidos,
+      apellidoPaternoValido,
+      apellidoMaternoValido,
+      sexoValido,
+      fechaNacimientoValida,
+      formValidoManual:
+        dniValido &&
+        nombresValidos &&
+        apellidoPaternoValido &&
+        apellidoMaternoValido &&
+        sexoValido &&
+        fechaNacimientoValida
+    };
+  }, [personaForm]);
 
   const personaNombrePorId = useMemo(() => {
     return personasOpciones.reduce<Record<string, string>>((acc, persona) => {
@@ -924,6 +1391,68 @@ export default function SuperadminPage() {
       return false;
     });
   }, [usuarios, searchQuery, searchHasEdgeSpaces, personaNombrePorId, clinicaNombrePorId]);
+
+  const filteredPersonas = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    if (!query) return personas;
+
+    const queryDigits = onlyDigits(searchQuery);
+    const dateQuery = parseDateQuery(searchQuery);
+
+    return personas.filter((personaItem) => {
+      const createdKey = toLocalDateKey(personaItem.created_at);
+      const nacimientoKey = toLocalDateKey(personaItem.fecha_nacimiento);
+
+      if (dateQuery) {
+        return createdKey === dateQuery || nacimientoKey === dateQuery;
+      }
+
+      const haystack = normalizeText([
+        personaItem.dni,
+        personaItem.nombres,
+        personaItem.apellido_paterno,
+        personaItem.apellido_materno,
+        personaItem.sexo,
+        createdKey,
+        nacimientoKey,
+        new Date(personaItem.created_at).toLocaleDateString('es-PE'),
+        new Date(personaItem.fecha_nacimiento).toLocaleDateString('es-PE')
+      ].join(' '));
+
+      if (haystack.includes(query)) return true;
+
+      if (queryDigits) {
+        const personaDigits = onlyDigits([
+          personaItem.dni,
+          personaItem.created_at,
+          personaItem.fecha_nacimiento
+        ].join(' '));
+        return personaDigits.includes(queryDigits);
+      }
+
+      return false;
+    });
+  }, [personas, searchQuery, searchHasEdgeSpaces]);
+
+  const filteredSesiones = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    if (!query) return sesiones;
+
+    return sesiones.filter((sesionItem) => {
+      const haystack = normalizeText([
+        sesionItem.email || '',
+        sesionItem.rol || '',
+        new Date(sesionItem.created_at).toLocaleString('es-PE'),
+        new Date(sesionItem.expires_at).toLocaleString('es-PE')
+      ].join(' '));
+
+      return haystack.includes(query);
+    });
+  }, [sesiones, searchQuery, searchHasEdgeSpaces]);
 
   if (state === 'loading') {
     return (
@@ -1151,10 +1680,6 @@ export default function SuperadminPage() {
                   </button>
                 </div>
 
-                {clinicaMessage && (
-                  <p className={`clinica-message ${clinicaMessage.type}`}>{clinicaMessage.text}</p>
-                )}
-
                 <div className="clinicas-table-wrap">
                   <table className="clinicas-table">
                     <thead>
@@ -1178,37 +1703,51 @@ export default function SuperadminPage() {
                           <td colSpan={7}>No hay resultados para la búsqueda.</td>
                         </tr>
                       ) : (
-                        filteredClinicas.map((clinica) => {
-                          const desactivada = Boolean(clinica.deleted_at);
-                          return (
-                            <tr key={clinica.id} className={desactivada ? 'clinica-row-disabled' : ''}>
-                              <td>{clinica.nombre}</td>
-                              <td>{clinica.ruc || '-'}</td>
-                              <td>{clinica.direccion || '-'}</td>
-                              <td>{clinica.telefono || '-'}</td>
-                              <td>{desactivada ? 'INACTIVA' : 'ACTIVA'}</td>
-                              <td>{new Date(clinica.created_at).toLocaleString('es-PE')}</td>
-                              <td>
-                                <div className="clinica-actions">
-                                  <button type="button" onClick={() => abrirModalEditarClinica(clinica)}>Editar</button>
-                                  {desactivada ? (
-                                    <button type="button" className="reactivar" onClick={() => reactivarClinica(clinica.id)}>
-                                      Reactivar
-                                    </button>
-                                  ) : (
-                                    <button type="button" className="desactivar" onClick={() => desactivarClinica(clinica.id)}>
-                                      Desactivar
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
+                        filteredClinicas
+                          .slice(
+                            (clinicaPaginaActual - 1) * ITEMS_POR_PAGINA,
+                            clinicaPaginaActual * ITEMS_POR_PAGINA
+                          )
+                          .map((clinica) => {
+                            const desactivada = Boolean(clinica.deleted_at);
+                            return (
+                              <tr key={clinica.id} className={desactivada ? 'clinica-row-disabled' : ''}>
+                                <td>{clinica.nombre}</td>
+                                <td>{clinica.ruc || '-'}</td>
+                                <td>{clinica.direccion || '-'}</td>
+                                <td>{clinica.telefono || '-'}</td>
+                                <td>{desactivada ? 'INACTIVA' : 'ACTIVA'}</td>
+                                <td>{new Date(clinica.created_at).toLocaleString('es-PE')}</td>
+                                <td>
+                                  <div className="clinica-actions">
+                                    <button type="button" onClick={() => abrirModalEditarClinica(clinica)}>Editar</button>
+                                    {desactivada ? (
+                                      <button type="button" className="reactivar" onClick={() => reactivarClinica(clinica.id)}>
+                                        Reactivar
+                                      </button>
+                                    ) : (
+                                      <button type="button" className="desactivar" onClick={() => desactivarClinica(clinica.id)}>
+                                        Desactivar
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                       )}
                     </tbody>
                   </table>
                 </div>
+
+                {filteredClinicas.length > ITEMS_POR_PAGINA && (
+                  <Pagination
+                    totalItems={filteredClinicas.length}
+                    itemsPerPage={ITEMS_POR_PAGINA}
+                    currentPage={clinicaPaginaActual}
+                    onPageChange={setClinicaPaginaActual}
+                  />
+                )}
               </article>
 
               {clinicaModalOpen && (
@@ -1287,10 +1826,6 @@ export default function SuperadminPage() {
                   </button>
                 </div>
 
-                {usuarioMessage && (
-                  <p className={`clinica-message ${usuarioMessage.type}`}>{usuarioMessage.text}</p>
-                )}
-
                 <div className="clinicas-table-wrap">
                   <table className="clinicas-table">
                     <thead>
@@ -1314,37 +1849,51 @@ export default function SuperadminPage() {
                           <td colSpan={7}>No hay resultados para la búsqueda.</td>
                         </tr>
                       ) : (
-                        filteredUsuarios.map((usuarioItem) => {
-                          const desactivado = Boolean(usuarioItem.deleted_at);
-                          return (
-                            <tr key={usuarioItem.id} className={desactivado ? 'clinica-row-disabled' : ''}>
-                              <td>{usuarioItem.email}</td>
-                              <td>{usuarioItem.rol}</td>
-                              <td>{personaNombrePorId[usuarioItem.persona_id] || usuarioItem.persona_id}</td>
-                              <td>{clinicaNombrePorId[usuarioItem.clinica_id || ''] || usuarioItem.clinica_id || '-'}</td>
-                              <td>{desactivado ? 'INACTIVO' : usuarioItem.estado}</td>
-                              <td>{new Date(usuarioItem.created_at).toLocaleString('es-PE')}</td>
-                              <td>
-                                <div className="clinica-actions">
-                                  <button type="button" onClick={() => abrirModalEditarUsuario(usuarioItem)}>Editar</button>
-                                  {desactivado ? (
-                                    <button type="button" className="reactivar" onClick={() => reactivarUsuario(usuarioItem.id)}>
-                                      Reactivar
-                                    </button>
-                                  ) : (
-                                    <button type="button" className="desactivar" onClick={() => desactivarUsuario(usuarioItem.id)}>
-                                      Desactivar
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
+                        filteredUsuarios
+                          .slice(
+                            (usuarioPaginaActual - 1) * ITEMS_POR_PAGINA,
+                            usuarioPaginaActual * ITEMS_POR_PAGINA
+                          )
+                          .map((usuarioItem) => {
+                            const desactivado = Boolean(usuarioItem.deleted_at);
+                            return (
+                              <tr key={usuarioItem.id} className={desactivado ? 'clinica-row-disabled' : ''}>
+                                <td>{usuarioItem.email}</td>
+                                <td>{usuarioItem.rol}</td>
+                                <td>{personaNombrePorId[usuarioItem.persona_id] || usuarioItem.persona_id}</td>
+                                <td>{clinicaNombrePorId[usuarioItem.clinica_id || ''] || usuarioItem.clinica_id || '-'}</td>
+                                <td>{desactivado ? 'INACTIVO' : usuarioItem.estado}</td>
+                                <td>{new Date(usuarioItem.created_at).toLocaleString('es-PE')}</td>
+                                <td>
+                                  <div className="clinica-actions">
+                                    <button type="button" onClick={() => abrirModalEditarUsuario(usuarioItem)}>Editar</button>
+                                    {desactivado ? (
+                                      <button type="button" className="reactivar" onClick={() => reactivarUsuario(usuarioItem.id)}>
+                                        Reactivar
+                                      </button>
+                                    ) : (
+                                      <button type="button" className="desactivar" onClick={() => desactivarUsuario(usuarioItem.id)}>
+                                        Desactivar
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                       )}
                     </tbody>
                   </table>
                 </div>
+
+                {filteredUsuarios.length > ITEMS_POR_PAGINA && (
+                  <Pagination
+                    totalItems={filteredUsuarios.length}
+                    itemsPerPage={ITEMS_POR_PAGINA}
+                    currentPage={usuarioPaginaActual}
+                    onPageChange={setUsuarioPaginaActual}
+                  />
+                )}
               </article>
 
               {usuarioModalOpen && (
@@ -1435,6 +1984,263 @@ export default function SuperadminPage() {
                 </div>
               )}
             </section>
+          ) : activeTab === 'Personas' ? (
+            <section className="superadmin-grid clinicas-grid">
+              <article className="superadmin-card clinicas-card">
+                <div className="clinicas-header">
+                  <h3>Listado de personas</h3>
+                  <button type="button" className="clinica-btn-primary" onClick={abrirModalCrearPersona}>
+                    Nueva persona
+                  </button>
+                </div>
+
+                <div className="clinicas-table-wrap">
+                  <table className="clinicas-table">
+                    <thead>
+                      <tr>
+                        <th>DNI</th>
+                        <th>Nombres</th>
+                        <th>Apellido paterno</th>
+                        <th>Apellido materno</th>
+                        <th>Sexo</th>
+                        <th>F. nacimiento</th>
+                        <th>Creación</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {personasLoading ? (
+                        <tr>
+                          <td colSpan={8}>Cargando personas...</td>
+                        </tr>
+                      ) : filteredPersonas.length === 0 ? (
+                        <tr>
+                          <td colSpan={8}>No hay resultados para la búsqueda.</td>
+                        </tr>
+                      ) : (
+                        filteredPersonas
+                          .slice(
+                            (personaPaginaActual - 1) * ITEMS_POR_PAGINA,
+                            personaPaginaActual * ITEMS_POR_PAGINA
+                          )
+                          .map((personaItem) => {
+                            const desactivada = Boolean(personaItem.deleted_at);
+                            return (
+                              <tr key={personaItem.id} className={desactivada ? 'clinica-row-disabled' : ''}>
+                                <td>{personaItem.dni}</td>
+                                <td>{personaItem.nombres}</td>
+                                <td>{personaItem.apellido_paterno}</td>
+                                <td>{personaItem.apellido_materno}</td>
+                                <td>{personaItem.sexo}</td>
+                                <td>{new Date(personaItem.fecha_nacimiento).toLocaleDateString('es-PE')}</td>
+                                <td>{new Date(personaItem.created_at).toLocaleString('es-PE')}</td>
+                                <td>
+                                  <div className="clinica-actions">
+                                    <button type="button" onClick={() => abrirModalEditarPersona(personaItem)}>Editar</button>
+                                    {desactivada ? (
+                                      <button type="button" className="reactivar" onClick={() => reactivarPersona(personaItem.id)}>
+                                        Reactivar
+                                      </button>
+                                    ) : (
+                                      <button type="button" className="desactivar" onClick={() => desactivarPersona(personaItem.id)}>
+                                        Desactivar
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredPersonas.length > ITEMS_POR_PAGINA && (
+                  <Pagination
+                    totalItems={filteredPersonas.length}
+                    itemsPerPage={ITEMS_POR_PAGINA}
+                    currentPage={personaPaginaActual}
+                    onPageChange={setPersonaPaginaActual}
+                  />
+                )}
+              </article>
+
+              {personaModalOpen && (
+                <div className="clinica-modal-backdrop" role="dialog" aria-modal="true">
+                  <section className="clinica-modal">
+                    <h3>{personaModalMode === 'create' ? 'Nueva persona' : 'Editar persona'}</h3>
+
+                    <form onSubmit={guardarPersona} className="clinica-form">
+                      {personaModalMode === 'create' && (
+                        <label>
+                          Método de registro
+                          <select
+                            value={personaCreateMode}
+                            onChange={(event) => setPersonaCreateMode(event.target.value as 'dni' | 'manual')}
+                          >
+                            <option value="dni">Por DNI</option>
+                            <option value="manual">Manual</option>
+                          </select>
+                        </label>
+                      )}
+
+                      <label>
+                        DNI
+                        <input
+                          value={personaForm.dni}
+                          onChange={(event) => {
+                            const numericValue = event.target.value.replace(/\D/g, '').slice(0, 8);
+                            setPersonaForm((prev) => ({ ...prev, dni: numericValue }));
+                          }}
+                          placeholder="8 dígitos"
+                          maxLength={8}
+                          inputMode="numeric"
+                          pattern="\d{8}"
+                          required
+                        />
+                        {personaForm.dni.length > 0 && !personaFormValidation.dniValido ? (
+                          <span className="clinica-field-error">El DNI debe tener exactamente 8 dígitos.</span>
+                        ) : null}
+                      </label>
+
+                      {(personaModalMode === 'edit' || personaCreateMode === 'manual') && (
+                        <>
+                          <label>
+                            Nombres
+                            <input
+                              value={personaForm.nombres}
+                              onChange={(event) => setPersonaForm((prev) => ({ ...prev, nombres: event.target.value }))}
+                              required
+                            />
+                          </label>
+
+                          <label>
+                            Apellido paterno
+                            <input
+                              value={personaForm.apellido_paterno}
+                              onChange={(event) => setPersonaForm((prev) => ({ ...prev, apellido_paterno: event.target.value }))}
+                              required
+                            />
+                          </label>
+
+                          <label>
+                            Apellido materno
+                            <input
+                              value={personaForm.apellido_materno}
+                              onChange={(event) => setPersonaForm((prev) => ({ ...prev, apellido_materno: event.target.value }))}
+                              required
+                            />
+                          </label>
+
+                          <label>
+                            Sexo
+                            <select
+                              value={personaForm.sexo}
+                              onChange={(event) => setPersonaForm((prev) => ({ ...prev, sexo: event.target.value as PersonaForm['sexo'] }))}
+                              required
+                            >
+                              <option value="MASCULINO">MASCULINO</option>
+                              <option value="FEMENINO">FEMENINO</option>
+                            </select>
+                          </label>
+
+                          <label>
+                            Fecha de nacimiento
+                            <input
+                              type="date"
+                              value={personaForm.fecha_nacimiento}
+                              onChange={(event) => setPersonaForm((prev) => ({ ...prev, fecha_nacimiento: event.target.value }))}
+                              required
+                            />
+                          </label>
+                        </>
+                      )}
+
+                      {personaModalMode === 'create' && personaCreateMode === 'dni' ? (
+                        <p className="superadmin-description">Se consultará el DNI en BD y API externa para completar datos automáticamente.</p>
+                      ) : null}
+
+                      <div className="clinica-modal-actions">
+                        <button type="button" className="clinica-btn-cancel" onClick={() => setPersonaModalOpen(false)}>Cancelar</button>
+                        <button
+                          type="submit"
+                          className="clinica-btn-primary clinica-btn-save"
+                          disabled={personaModalMode === 'create' && personaCreateMode === 'dni'
+                            ? !personaFormValidation.dniValido
+                            : !personaFormValidation.formValidoManual}
+                        >
+                          Guardar
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              )}
+            </section>
+          ) : activeTab === 'Sesiones' ? (
+            <section className="superadmin-grid clinicas-grid">
+              <article className="superadmin-card clinicas-card">
+                <div className="clinicas-header">
+                  <h3>Sesiones activas</h3>
+                </div>
+
+                <div className="clinicas-table-wrap">
+                  <table className="clinicas-table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>Rol</th>
+                        <th>Creación</th>
+                        <th>Expira</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sesionesLoading ? (
+                        <tr>
+                          <td colSpan={5}>Cargando sesiones...</td>
+                        </tr>
+                      ) : filteredSesiones.length === 0 ? (
+                        <tr>
+                          <td colSpan={5}>No hay resultados para la búsqueda.</td>
+                        </tr>
+                      ) : (
+                        filteredSesiones
+                          .slice(
+                            (sesionPaginaActual - 1) * ITEMS_POR_PAGINA,
+                            sesionPaginaActual * ITEMS_POR_PAGINA
+                          )
+                          .map((sesionItem) => (
+                            <tr key={sesionItem.id}>
+                              <td>{sesionItem.email || 'N/A'}</td>
+                              <td>{sesionItem.rol || 'N/A'}</td>
+                              <td>{new Date(sesionItem.created_at).toLocaleString('es-PE')}</td>
+                              <td>{new Date(sesionItem.expires_at).toLocaleString('es-PE')}</td>
+                              <td>
+                                <div className="clinica-actions">
+                                  <button type="button" className="desactivar" onClick={() => revocarSesion(sesionItem.id)}>
+                                    Revocar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredSesiones.length > ITEMS_POR_PAGINA && (
+                  <Pagination
+                    totalItems={filteredSesiones.length}
+                    itemsPerPage={ITEMS_POR_PAGINA}
+                    currentPage={sesionPaginaActual}
+                    onPageChange={setSesionPaginaActual}
+                  />
+                )}
+              </article>
+            </section>
           ) : (
             <section className="superadmin-grid">
               <article className="superadmin-card">
@@ -1445,6 +2251,69 @@ export default function SuperadminPage() {
           )}
         </section>
       </section>
+
+      {globalMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          backgroundColor: globalMessage.type === 'success' ? '#d4edda' : '#f8d7da',
+          border: `2px solid ${globalMessage.type === 'success' ? '#28a745' : '#dc3545'}`,
+          borderRadius: '50px',
+          padding: '16px 24px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 1000,
+          maxWidth: '300px',
+          animation: 'bubbleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0s, bubbleOut 0.4s cubic-bezier(0.36, 0, 0.66, -0.56) 2.6s forwards'
+        }}>
+          <p style={{
+            margin: 0,
+            fontSize: '14px',
+            fontWeight: 'bold',
+            color: '#000000',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            {globalMessage.type === 'success' ? '✓' : '✕'} {globalMessage.text}
+          </p>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(20px);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+
+        @keyframes bubbleIn {
+          from {
+            transform: scale(0) translateY(20px);
+            opacity: 0;
+          }
+          to {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+          }
+        }
+
+        @keyframes bubbleOut {
+          from {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+          }
+          to {
+            transform: scale(0) translateY(20px);
+            opacity: 0;
+          }
+        }
+      `}</style>
     </main>
   );
 }

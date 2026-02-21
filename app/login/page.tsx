@@ -102,6 +102,11 @@ export default function LoginPage() {
       setMessage('Iniciando sesión...');
       setMessageType('success');
 
+      // Guardar session ID en localStorage para identificar la sesión actual
+      if (data.data?.sessionId) {
+        localStorage.setItem('sessionId', data.data.sessionId);
+      }
+
       // Transición
       setIsExiting(true);
       setTimeout(() => {
