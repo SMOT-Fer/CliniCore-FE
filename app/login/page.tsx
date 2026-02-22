@@ -52,7 +52,7 @@ export default function LoginPage() {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // Silencioso si hay error
       }
     };
@@ -64,7 +64,7 @@ export default function LoginPage() {
   const ensureCsrfToken = async () => {
     try {
       await fetch(API_CSRF, { credentials: 'include' });
-    } catch (error) {
+    } catch {
       // Silencioso
     }
   };
@@ -118,7 +118,7 @@ export default function LoginPage() {
           setIsExiting(false);
         }
       }, 480);
-    } catch (error) {
+    } catch {
       setMessage('Error de conexión. Intenta nuevamente.');
       setMessageType('error');
       setIsLoading(false);

@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 const BACKEND_BASE_URL =
   process.env.BACKEND_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  'https://saas-be-t4rh.onrender.com';
+  (process.env.NODE_ENV === 'production' ? '' : 'https://saas-be-t4rh.onrender.com');
 
 function adaptSetCookie(cookieValue: string) {
   if (process.env.NODE_ENV === 'production') {
@@ -14,6 +14,18 @@ function adaptSetCookie(cookieValue: string) {
 }
 
 async function proxyRequest(request: NextRequest, path: string[]) {
+  if (!BACKEND_BASE_URL) {
+    return new Response(
+      JSON.stringify({
+        error: 'Missing backend URL. Set BACKEND_API_URL (recommended) or NEXT_PUBLIC_API_URL.'
+      }),
+      {
+        status: 500,
+        headers: { 'content-type': 'application/json' }
+      }
+    );
+  }
+
   const targetUrl = `${BACKEND_BASE_URL}/api/${path.join('/')}${request.nextUrl.search}`;
   const requestHeaders = new Headers();
 

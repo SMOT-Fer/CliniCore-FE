@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import '../css/superadmin.css';
@@ -32,6 +32,14 @@ type UsuarioSesion = {
 
 const TABS = ['Dashboard', 'Clinicas', 'Usuarios', 'Personas', 'Sesiones'] as const;
 type SuperadminTab = (typeof TABS)[number];
+
+const TAB_META: Record<SuperadminTab, { icon: string; label: string }> = {
+  Dashboard: { icon: '📊', label: 'Dashboard' },
+  Clinicas: { icon: '🏥', label: 'Clinicas' },
+  Usuarios: { icon: '👤', label: 'Usuarios' },
+  Personas: { icon: '🧾', label: 'Personas' },
+  Sesiones: { icon: '🔐', label: 'Sesiones' }
+};
 
 const CHART_BARS_FALLBACK = [32, 140, 182, 221, 104, 139, 88];
 
@@ -252,7 +260,7 @@ function Pagination({
           style={{
             padding: '8px 12px',
             margin: '0 4px',
-            backgroundColor: currentPage === pageNum ? '#3498db' : '#f0f0f0',
+            backgroundColor: currentPage === pageNum ? 'var(--primary-color)' : '#f0f0f0',
             color: currentPage === pageNum ? '#fff' : '#333',
             border: 'none',
             borderRadius: '4px',
@@ -274,6 +282,10 @@ export default function SuperadminPage() {
   const [message, setMessage] = useState('Validando sesión...');
   const [usuario, setUsuario] = useState<UsuarioSesion | null>(null);
   const [activeTab, setActiveTab] = useState<SuperadminTab>('Dashboard');
+  const [renderTab, setRenderTab] = useState<SuperadminTab>('Dashboard');
+  const [tabTransitionState, setTabTransitionState] = useState<'idle' | 'exiting' | 'entering'>('entering');
+  const [sidebarState, setSidebarState] = useState<'expanded' | 'opening' | 'collapsing' | 'collapsed'>('collapsed');
+  const sidebarCollapseTimerRef = useRef<number | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -294,7 +306,7 @@ export default function SuperadminPage() {
     password: '',
     rol: 'ADMIN'
   });
-  const [usuarioMessage, setUsuarioMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [, setUsuarioMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [personasOpciones, setPersonasOpciones] = useState<PersonaOption[]>([]);
   const [personas, setPersonas] = useState<PersonaAdmin[]>([]);
   const [personasLoading, setPersonasLoading] = useState(false);
@@ -310,7 +322,7 @@ export default function SuperadminPage() {
     sexo: 'MASCULINO',
     fecha_nacimiento: ''
   });
-  const [personaMessage, setPersonaMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [, setPersonaMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [clinicaPaginaActual, setClinicaPaginaActual] = useState(1);
   const [usuarioPaginaActual, setUsuarioPaginaActual] = useState(1);
   const [personaPaginaActual, setPersonaPaginaActual] = useState(1);
@@ -331,7 +343,7 @@ export default function SuperadminPage() {
     telefono: '',
     estado: 'ACTIVA'
   });
-  const [clinicaMessage, setClinicaMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [, setClinicaMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [stats, setStats] = useState<DashboardStats>({
     clinicasTotal: 0,
     clinicasActivas: 0,
@@ -1221,6 +1233,66 @@ export default function SuperadminPage() {
     return max > 0 ? max : 1;
   }, [stats.actividadSemanal]);
 
+  const actividadCurveData = useMemo(() => {
+    const chartWidth = 680;
+    const chartHeight = 170;
+    const baselineY = 182;
+    const leftPadding = 12;
+    const rightPadding = 12;
+    const items = stats.actividadSemanal;
+
+    if (!items.length) {
+      return { points: [], linePath: '', areaPath: '', baselineY };
+    }
+
+    const step = items.length > 1
+      ? (chartWidth - leftPadding - rightPadding) / (items.length - 1)
+      : 0;
+
+    const points = items.map((item, index) => {
+      const x = leftPadding + index * step;
+      const ratio = Math.max(0, Math.min(1, item.total / actividadMaxTotal));
+      const y = baselineY - Math.round(ratio * chartHeight);
+      return {
+        x,
+        y,
+        etiqueta: item.etiqueta,
+        total: item.total
+      };
+    });
+
+    if (points.length === 1) {
+      const singlePointPath = `M ${points[0].x} ${points[0].y}`;
+      const singleAreaPath = `M ${points[0].x} ${baselineY} L ${points[0].x} ${points[0].y} L ${points[0].x} ${baselineY} Z`;
+      return { points, linePath: singlePointPath, areaPath: singleAreaPath, baselineY };
+    }
+
+    let linePath = `M ${points[0].x} ${points[0].y}`;
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const controlX = (previous.x + current.x) / 2;
+      const controlY = (previous.y + current.y) / 2;
+      linePath += ` Q ${previous.x} ${previous.y} ${controlX} ${controlY}`;
+    }
+
+    const lastPoint = points[points.length - 1];
+    linePath += ` Q ${lastPoint.x} ${lastPoint.y} ${lastPoint.x} ${lastPoint.y}`;
+
+    let areaPath = `M ${points[0].x} ${baselineY} L ${points[0].x} ${points[0].y}`;
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const controlX = (previous.x + current.x) / 2;
+      const controlY = (previous.y + current.y) / 2;
+      areaPath += ` Q ${previous.x} ${previous.y} ${controlX} ${controlY}`;
+    }
+    areaPath += ` Q ${lastPoint.x} ${lastPoint.y} ${lastPoint.x} ${lastPoint.y}`;
+    areaPath += ` L ${lastPoint.x} ${baselineY} Z`;
+
+    return { points, linePath, areaPath, baselineY };
+  }, [stats.actividadSemanal, actividadMaxTotal]);
+
   const clinicaFormValidation = useMemo(() => {
     const nombreValido = clinicaForm.nombre.trim().length > 0;
     const rucValido = /^\d{11}$/.test(clinicaForm.ruc);
@@ -1465,6 +1537,70 @@ export default function SuperadminPage() {
     });
   }, [sesiones, searchQuery, searchHasEdgeSpaces]);
 
+  const handleTabChange = useCallback((nextTab: SuperadminTab) => {
+    if (nextTab === activeTab || tabTransitionState === 'exiting') return;
+    setActiveTab(nextTab);
+    setTabTransitionState('exiting');
+  }, [activeTab, tabTransitionState]);
+
+  useEffect(() => {
+    if (tabTransitionState !== 'exiting') return;
+
+    const exitTimer = window.setTimeout(() => {
+      setRenderTab(activeTab);
+      setTabTransitionState('entering');
+    }, 180);
+
+    return () => window.clearTimeout(exitTimer);
+  }, [activeTab, tabTransitionState]);
+
+  useEffect(() => {
+    if (tabTransitionState !== 'entering') return;
+
+    const enterTimer = window.setTimeout(() => {
+      setTabTransitionState('idle');
+    }, 260);
+
+    return () => window.clearTimeout(enterTimer);
+  }, [tabTransitionState]);
+
+  useEffect(() => {
+    return () => {
+      if (sidebarCollapseTimerRef.current) {
+        window.clearTimeout(sidebarCollapseTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleSidebarMouseEnter = useCallback(() => {
+    if (sidebarCollapseTimerRef.current) {
+      window.clearTimeout(sidebarCollapseTimerRef.current);
+      sidebarCollapseTimerRef.current = null;
+    }
+
+    if (sidebarState === 'expanded') return;
+
+    setSidebarState('opening');
+    sidebarCollapseTimerRef.current = window.setTimeout(() => {
+      setSidebarState('expanded');
+      sidebarCollapseTimerRef.current = null;
+    }, 220);
+  }, [sidebarState]);
+
+  const handleSidebarMouseLeave = useCallback(() => {
+    if (sidebarCollapseTimerRef.current) {
+      window.clearTimeout(sidebarCollapseTimerRef.current);
+    }
+
+    setSidebarState('collapsing');
+    sidebarCollapseTimerRef.current = window.setTimeout(() => {
+      setSidebarState('collapsed');
+      sidebarCollapseTimerRef.current = null;
+    }, 240);
+  }, []);
+
+  const isSidebarCompact = sidebarState === 'collapsed' || sidebarState === 'collapsing';
+
   if (state === 'loading') {
     return (
       <main className="superadmin-page">
@@ -1497,8 +1633,12 @@ export default function SuperadminPage() {
   return (
     <main className={`superadmin-page ${isEntering ? 'is-entered' : ''} ${isExiting ? 'is-exiting' : ''}`}>
       <div className={`superadmin-exit-overlay ${isExiting ? 'visible' : ''}`} aria-hidden="true" />
-      <section className="superadmin-layout">
-        <aside className="superadmin-sidebar">
+      <section className={`superadmin-layout ${isSidebarCompact ? 'sidebar-collapsed' : ''}`}>
+        <aside
+          className={`superadmin-sidebar ${isSidebarCompact ? 'collapsed' : ''} ${sidebarState === 'collapsing' ? 'is-collapsing' : ''} ${sidebarState === 'opening' ? 'is-opening' : ''}`}
+          onMouseEnter={handleSidebarMouseEnter}
+          onMouseLeave={handleSidebarMouseLeave}
+        >
           <div className="superadmin-brand">
             <div className="superadmin-brand-logo" aria-hidden="true">F</div>
             <h1 className="superadmin-title">SaaS Clínico</h1>
@@ -1509,10 +1649,12 @@ export default function SuperadminPage() {
             {TABS.map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => handleTabChange(tab)}
                 className={`superadmin-tab ${activeTab === tab ? 'active' : ''}`}
+                data-label={TAB_META[tab].label}
               >
-                {tab}
+                <span className="superadmin-tab-dot" aria-hidden="true">{TAB_META[tab].icon}</span>
+                <span className="superadmin-tab-text">{tab}</span>
               </button>
             ))}
           </nav>
@@ -1524,7 +1666,8 @@ export default function SuperadminPage() {
               onClick={handleLogout}
               disabled={isLoggingOut}
             >
-              {isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+              <span className="superadmin-logout-icon" aria-hidden="true">⏻</span>
+              <span className="superadmin-link-text">{isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}</span>
             </button>
 
             <div className="superadmin-user-footer">
@@ -1547,9 +1690,9 @@ export default function SuperadminPage() {
           </header>
 
           <div className="superadmin-heading-wrap">
-            <div>
+            <div className={`superadmin-heading-animated ${tabTransitionState === 'exiting' ? 'is-exiting' : ''} ${tabTransitionState === 'entering' ? 'is-entering' : ''}`}>
               <p className="superadmin-kicker">Panel principal</p>
-              <h2 className="superadmin-heading">{activeTab}</h2>
+              <h2 className="superadmin-heading">{renderTab}</h2>
               <p className="superadmin-description">Control operativo del sistema clínico.</p>
             </div>
             <div className="superadmin-badges">
@@ -1558,7 +1701,8 @@ export default function SuperadminPage() {
             </div>
           </div>
 
-          {activeTab === 'Dashboard' ? (
+          <div className={`superadmin-tab-panel ${tabTransitionState === 'exiting' ? 'is-exiting' : ''} ${tabTransitionState === 'entering' ? 'is-entering' : ''}`}>
+          {renderTab === 'Dashboard' ? (
             <section className="superadmin-dashboard">
               <div className="dashboard-grid">
                 <article
@@ -1571,7 +1715,7 @@ export default function SuperadminPage() {
                     className="metric-ring"
                     style={{
                       ['--progress' as string]: `${clinicasProgress}%`,
-                      ['--ring-color' as string]: '#35b5cf'
+                      ['--ring-color' as string]: 'var(--primary-color-soft)'
                     } as CSSProperties}
                   >
                     <div className="metric-ring-inner">
@@ -1603,7 +1747,7 @@ export default function SuperadminPage() {
                     className="metric-ring"
                     style={{
                       ['--progress' as string]: `${usuariosProgress}%`,
-                      ['--ring-color' as string]: '#3498db'
+                      ['--ring-color' as string]: 'var(--primary-color)'
                     } as CSSProperties}
                   >
                     <div className="metric-ring-inner">
@@ -1650,19 +1794,34 @@ export default function SuperadminPage() {
                   <span>Últimos 7 días hasta la fecha seleccionada</span>
                 </div>
                 <div className="bars-wrap" aria-hidden="true">
-                  {stats.actividadSemanal.map((item) => (
-                    <div key={`${item.dia}-${item.etiqueta}`} className="bar-col">
-                      <div className="bar-track">
-                        <div
-                          className="bar"
-                          style={{
-                            height: `${Math.max(8, Math.round((item.total / actividadMaxTotal) * 100))}%`
-                          }}
-                        />
-                      </div>
-                      <span className="bar-day-label">{item.etiqueta}</span>
-                    </div>
-                  ))}
+                  <svg className="activity-curve-chart" viewBox="0 0 680 200" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="activityAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="rgba(77, 122, 168, 0.34)" />
+                        <stop offset="100%" stopColor="rgba(77, 122, 168, 0.03)" />
+                      </linearGradient>
+                    </defs>
+
+                    <line x1="0" y1={actividadCurveData.baselineY} x2="680" y2={actividadCurveData.baselineY} className="activity-curve-baseline" />
+
+                    {actividadCurveData.areaPath ? (
+                      <path d={actividadCurveData.areaPath} fill="url(#activityAreaGradient)" />
+                    ) : null}
+
+                    {actividadCurveData.linePath ? (
+                      <path d={actividadCurveData.linePath} className="activity-curve-line" />
+                    ) : null}
+
+                    {actividadCurveData.points.map((point) => (
+                      <circle key={`${point.etiqueta}-${point.total}`} cx={point.x} cy={point.y} r="4" className="activity-curve-dot" />
+                    ))}
+                  </svg>
+
+                  <div className="curve-day-labels">
+                    {stats.actividadSemanal.map((item) => (
+                      <span key={`${item.dia}-${item.etiqueta}`} className="bar-day-label">{item.etiqueta}</span>
+                    ))}
+                  </div>
                 </div>
               </article>
 
@@ -1681,7 +1840,7 @@ export default function SuperadminPage() {
                 )}
               </article>
             </section>
-          ) : activeTab === 'Clinicas' ? (
+          ) : renderTab === 'Clinicas' ? (
             <section className="superadmin-grid clinicas-grid">
               <article className="superadmin-card clinicas-card">
                 <div className="clinicas-header">
@@ -1827,7 +1986,7 @@ export default function SuperadminPage() {
                 </div>
               )}
             </section>
-          ) : activeTab === 'Usuarios' ? (
+          ) : renderTab === 'Usuarios' ? (
             <section className="superadmin-grid clinicas-grid">
               <article className="superadmin-card clinicas-card">
                 <div className="clinicas-header">
@@ -1995,7 +2154,7 @@ export default function SuperadminPage() {
                 </div>
               )}
             </section>
-          ) : activeTab === 'Personas' ? (
+          ) : renderTab === 'Personas' ? (
             <section className="superadmin-grid clinicas-grid">
               <article className="superadmin-card clinicas-card">
                 <div className="clinicas-header">
@@ -2189,7 +2348,7 @@ export default function SuperadminPage() {
                 </div>
               )}
             </section>
-          ) : activeTab === 'Sesiones' ? (
+          ) : renderTab === 'Sesiones' ? (
             <section className="superadmin-grid clinicas-grid">
               <article className="superadmin-card clinicas-card">
                 <div className="clinicas-header">
@@ -2222,21 +2381,36 @@ export default function SuperadminPage() {
                             (sesionPaginaActual - 1) * ITEMS_POR_PAGINA,
                             sesionPaginaActual * ITEMS_POR_PAGINA
                           )
-                          .map((sesionItem) => (
-                            <tr key={sesionItem.id}>
-                              <td>{sesionItem.email || 'N/A'}</td>
-                              <td>{sesionItem.rol || 'N/A'}</td>
-                              <td>{new Date(sesionItem.created_at).toLocaleString('es-PE')}</td>
-                              <td>{new Date(sesionItem.expires_at).toLocaleString('es-PE')}</td>
-                              <td>
-                                <div className="clinica-actions">
-                                  <button type="button" className="desactivar" onClick={() => revocarSesion(sesionItem.id)}>
-                                    Revocar
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
+                          .map((sesionItem) => {
+                            const esSesionActual = sessionIdActual === sesionItem.id;
+
+                            return (
+                              <tr key={sesionItem.id}>
+                                <td>
+                                  {sesionItem.email || 'N/A'}
+                                  {esSesionActual ? <span className="session-current-badge">Sesión actual</span> : null}
+                                </td>
+                                <td>{sesionItem.rol || 'N/A'}</td>
+                                <td>{new Date(sesionItem.created_at).toLocaleString('es-PE')}</td>
+                                <td>{new Date(sesionItem.expires_at).toLocaleString('es-PE')}</td>
+                                <td>
+                                  <div className="clinica-actions">
+                                    <button
+                                      type="button"
+                                      className={esSesionActual ? 'actual' : 'desactivar'}
+                                      onClick={() => {
+                                        if (esSesionActual) return;
+                                        revocarSesion(sesionItem.id);
+                                      }}
+                                      disabled={esSesionActual}
+                                    >
+                                      {esSesionActual ? 'Sesión actual' : 'Revocar'}
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                       )}
                     </tbody>
                   </table>
@@ -2260,6 +2434,7 @@ export default function SuperadminPage() {
               </article>
             </section>
           )}
+          </div>
         </section>
       </section>
 

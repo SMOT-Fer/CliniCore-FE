@@ -45,7 +45,22 @@ El proxy usa `BACKEND_API_URL` y, si no existe, usa `NEXT_PUBLIC_API_URL`.
 # API backend
 BACKEND_API_URL=https://saas-be-t4rh.onrender.com
 NEXT_PUBLIC_API_URL=https://saas-be-t4rh.onrender.com
+
+# URL pública del frontend
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
+
+## ▲ Deploy en Vercel
+
+1. Sube el repositorio a GitHub.
+2. En Vercel, crea un proyecto apuntando a `estudio-frontend` como Root Directory.
+3. En `Settings > Environment Variables`, configura:
+  - `BACKEND_API_URL` = `https://saas-be-t4rh.onrender.com`
+  - `NEXT_PUBLIC_API_URL` = `https://saas-be-t4rh.onrender.com` (opcional, recomendado)
+  - `NEXT_PUBLIC_APP_URL` = URL pública de Vercel (ej. `https://tu-proyecto.vercel.app`)
+4. Deploy.
+
+Si falta `BACKEND_API_URL` en producción, el proxy `/api/backend/*` responderá error 500 para evitar configuraciones ambiguas.
 
 ## 🔐 Autenticación
 

@@ -1,5 +1,13 @@
 :root {
-  --primary-color: #3498db;
+  --primary-color: #2a73d9;
+  --primary-color-strong: #1f66c8;
+  --primary-color-deep: #1856ac;
+  --primary-color-soft: #6ea4ee;
+  --page-bg-start: #edf2f8;
+  --page-bg-end: #e5ecf4;
+  --sidebar-text: #39485a;
+  --sidebar-text-muted: #697b90;
+  --sidebar-tab-text: #2f4053;
   --secondary-color: #2c3e50;
   --danger-color: #e74c3c;
   --success-color: #27ae60;
@@ -7,7 +15,7 @@
 
 .superadmin-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #eff6ff, #e6f4ea);
+  background: linear-gradient(135deg, var(--page-bg-start), var(--page-bg-end));
   color: var(--secondary-color);
   padding: 0;
   opacity: 0;
@@ -28,7 +36,7 @@
 .superadmin-exit-overlay {
   position: fixed;
   inset: 0;
-  background: linear-gradient(135deg, #eff6ff, #e6f4ea);
+  background: linear-gradient(135deg, var(--page-bg-start), var(--page-bg-end));
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.32s ease;
@@ -43,8 +51,13 @@
   width: 100%;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 330px 1fr;
+  grid-template-columns: 248px 1fr;
   gap: 0;
+  transition: grid-template-columns 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.superadmin-layout.sidebar-collapsed {
+  grid-template-columns: 68px 1fr;
 }
 
 .superadmin-sidebar,
@@ -56,52 +69,70 @@
 }
 
 .superadmin-sidebar {
-  background: linear-gradient(180deg, #3498db 0%, #2d7fb9 65%, #256fa3 100%);
-  color: #eef6ff;
-  padding: 1.2rem 1rem;
+  background: #f7f9fc;
+  color: var(--sidebar-text);
+  width: 248px;
+  padding: 0.9rem 0.65rem;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  box-shadow: none;
+  border-right: 1px solid #d8e2ef;
+  transition: width 0.42s cubic-bezier(0.22, 1, 0.36, 1), padding 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+
+.superadmin-sidebar.collapsed {
+  width: 68px;
+  padding: 0.8rem 0.45rem;
 }
 
 .superadmin-brand {
   width: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.7rem;
-  padding-bottom: 0.95rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 0.4rem 0 1.1rem;
+  border-bottom: 1px solid #dde6f0;
+  min-height: 148px;
 }
 
 .superadmin-brand-logo {
-  width: 74px;
-  height: 74px;
-  min-width: 74px;
-  min-height: 74px;
-  flex: 0 0 74px;
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  min-height: 64px;
+  flex: 0 0 64px;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
-  background: #ffffff;
-  color: #2d7fb9;
+  border: 2px solid #d5e3f4;
+  background: #e9f0fa;
+  color: var(--primary-color-strong);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.25rem;
+  font-size: 1.7rem;
   font-weight: 800;
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.5);
 }
 
 .superadmin-title {
-  font-size: 1.35rem;
+  font-size: 1rem;
   font-weight: 700;
-  color: #fff;
+  color: #243548;
   width: 100%;
+  text-align: center;
+  letter-spacing: 0.02em;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.24s ease, transform 0.24s ease, visibility 0s linear 0s;
 }
 
 .superadmin-user {
   margin-top: 0.3rem;
   font-size: 0.82rem;
-  color: #c9d5e3;
+  color: var(--sidebar-text-muted);
 }
 
 .superadmin-nav-label {
@@ -110,7 +141,10 @@
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(231, 243, 255, 0.86);
+  color: #8295ab;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.24s ease, transform 0.24s ease, visibility 0s linear 0s;
 }
 
 .superadmin-nav {
@@ -124,33 +158,63 @@
 .superadmin-tab {
   min-height: 48px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  background: rgba(15, 23, 42, 0.12);
-  color: #f3f9ff;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--sidebar-tab-text);
   text-align: left;
   padding: 0.7rem 0.95rem;
   font-size: 0.98rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.superadmin-tab-text {
+  opacity: 1;
+  max-width: 160px;
+  transform: translateX(0);
+  visibility: visible;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0s;
+}
+
+.superadmin-tab-dot {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  flex: 0 0 20px;
 }
 
 .superadmin-tab:hover {
-  border-color: rgba(255, 255, 255, 0.76);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  border-color: #c8d8ea;
+  background: #eef4fc;
+  color: #23374d;
 }
 
 .superadmin-tab.active {
-  border-color: #ffffff;
-  background: #ffffff;
-  color: #2d7fb9;
+  border-color: #c7dcf8;
+  background: linear-gradient(90deg, #f0f6ff, #e8f2ff);
+  color: var(--primary-color-strong);
+}
+
+.superadmin-tab.active .superadmin-tab-dot {
+  transform: scale(1.05);
 }
 
 .superadmin-sidebar-footer {
   width: 100%;
   margin-top: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.26);
+  border-top: 1px solid #dde6f0;
   padding-top: 1rem;
 }
 
@@ -158,23 +222,25 @@
   min-height: 42px;
   width: 100%;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.32);
+  border: 1px solid #d0dbe9;
   background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   text-decoration: none;
-  color: #eef6ff;
+  color: var(--sidebar-text);
   font-size: 0.95rem;
   font-weight: 600;
   transition: all 0.2s ease;
   cursor: pointer;
+  gap: 0.45rem;
+  overflow: hidden;
 }
 
 .superadmin-link:hover {
-  border-color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  border-color: #c1d2e6;
+  background: #eef4fb;
+  color: #223447;
 }
 
 .superadmin-link.logout {
@@ -195,47 +261,90 @@
 
 .superadmin-user-footer {
   margin-top: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid #d6e1ee;
   border-radius: 10px;
   padding: 0.7rem;
-  background: rgba(15, 23, 42, 0.14);
+  background: #edf3fa;
   font-size: 0.84rem;
-  color: #eef6ff;
+  color: var(--sidebar-text);
   display: grid;
   gap: 0.3rem;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  max-height: 120px;
+  overflow: hidden;
+  transition: opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease, margin-top 0.28s ease, padding 0.22s ease, visibility 0s linear 0s;
 }
 
 .superadmin-user-footer strong {
-  color: #ffffff;
+  color: #24384d;
 }
 
 .superadmin-content {
-  background: #ffffff;
+  background: #f3f7fc;
   padding: 0;
   overflow: hidden;
   min-height: 100vh;
 }
 
+.superadmin-tab-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  will-change: opacity, transform;
+}
+
+.superadmin-tab-panel.is-exiting {
+  opacity: 0;
+  transform: translateY(10px) scale(0.995);
+}
+
+.superadmin-tab-panel.is-entering {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.995);
+  animation: superadminTabIn 0.26s ease forwards;
+}
+
+@keyframes superadminTabIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .superadmin-topbar {
-  border-bottom: 1px solid #e5edf5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-color-strong) 100%);
   padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .superadmin-search {
   width: 100%;
   height: 42px;
   border-radius: 10px;
-  border: 1px solid #d7dee6;
+  border: 1px solid rgba(255, 255, 255, 0.26);
   padding: 0 0.9rem;
   font-size: 0.92rem;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.superadmin-search::placeholder {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .superadmin-search:focus {
   outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.16);
+  border-color: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
 }
 
 .superadmin-heading-wrap {
@@ -244,10 +353,40 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1.2rem 1.4rem 0.7rem;
+  background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-color-strong) 100%);
+}
+
+.superadmin-heading-animated {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  will-change: opacity, transform;
+}
+
+.superadmin-heading-animated.is-exiting {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.superadmin-heading-animated.is-entering {
+  opacity: 0;
+  transform: translateY(-6px);
+  animation: superadminHeadingIn 0.24s ease forwards;
+}
+
+@keyframes superadminHeadingIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .superadmin-kicker {
-  color: var(--primary-color);
+  color: rgba(236, 245, 255, 0.92);
   font-size: 0.9rem;
   font-weight: 600;
 }
@@ -256,11 +395,12 @@
   margin-top: 0.25rem;
   font-size: 1.9rem;
   font-weight: 700;
+  color: #ffffff;
 }
 
 .superadmin-description {
   margin-top: 0.45rem;
-  color: #5f6c7b;
+  color: rgba(229, 241, 255, 0.9);
   font-size: 0.95rem;
 }
 
@@ -273,26 +413,190 @@
 .badge-open,
 .badge-role {
   border-radius: 999px;
-  border: 1px solid #d7dee6;
-  background: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.15);
   padding: 0.35rem 0.7rem;
   font-size: 0.78rem;
   font-weight: 700;
 }
 
 .badge-open {
-  color: #27ae60;
+  color: #d8ffe8;
 }
 
 .badge-role {
-  color: #3498db;
+  color: #ffffff;
 }
 
 .superadmin-dashboard {
-  padding: 1rem 1.2rem 1.2rem;
+  padding: 0.95rem 1.2rem 1.2rem;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
+}
+
+.superadmin-sidebar.collapsed .superadmin-title,
+.superadmin-sidebar.collapsed .superadmin-nav-label,
+.superadmin-sidebar.collapsed .superadmin-user-footer,
+.superadmin-sidebar.collapsed .superadmin-tab-text {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.superadmin-sidebar.is-collapsing .superadmin-title,
+.superadmin-sidebar.is-collapsing .superadmin-nav-label,
+.superadmin-sidebar.is-collapsing .superadmin-user-footer,
+.superadmin-sidebar.is-collapsing .superadmin-tab-text {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.superadmin-sidebar.is-opening .superadmin-title,
+.superadmin-sidebar.is-opening .superadmin-nav-label,
+.superadmin-sidebar.is-opening .superadmin-user-footer,
+.superadmin-sidebar.is-opening .superadmin-tab-text {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.superadmin-sidebar.collapsed .superadmin-title,
+.superadmin-sidebar.collapsed .superadmin-nav-label {
+  transform: translateX(-8px);
+  transition: opacity 0.24s ease, transform 0.24s ease, visibility 0s linear 0.24s;
+}
+
+.superadmin-sidebar.is-collapsing .superadmin-title,
+.superadmin-sidebar.is-collapsing .superadmin-nav-label {
+  transform: translateX(-8px);
+  transition: opacity 0.24s ease, transform 0.24s ease, visibility 0s linear 0.24s;
+}
+
+.superadmin-sidebar.is-opening .superadmin-title,
+.superadmin-sidebar.is-opening .superadmin-nav-label {
+  transform: translateX(-8px);
+  transition: opacity 0.24s ease, transform 0.24s ease, visibility 0s linear 0s;
+}
+
+.superadmin-sidebar.collapsed .superadmin-user-footer {
+  transform: translateX(-8px);
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  transition: opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease, margin-top 0.28s ease, padding 0.22s ease, visibility 0s linear 0.24s;
+}
+
+.superadmin-sidebar.is-collapsing .superadmin-user-footer {
+  transform: translateX(-8px);
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  transition: opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease, margin-top 0.28s ease, padding 0.22s ease, visibility 0s linear 0.24s;
+}
+
+.superadmin-sidebar.is-opening .superadmin-user-footer {
+  transform: translateX(-8px);
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  transition: opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease, margin-top 0.28s ease, padding 0.22s ease, visibility 0s linear 0s;
+}
+
+.superadmin-sidebar.collapsed .superadmin-brand {
+  min-height: 148px;
+}
+
+.superadmin-sidebar.collapsed .superadmin-brand-logo {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  flex-basis: 56px;
+  font-size: 1.35rem;
+}
+
+.superadmin-sidebar.collapsed .superadmin-tab {
+  justify-content: center;
+  padding: 0.65rem 0.2rem;
+  min-height: 42px;
+}
+
+.superadmin-sidebar.collapsed .superadmin-tab-text {
+  max-width: 0;
+  transform: translateX(-8px);
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
+}
+
+.superadmin-sidebar.is-collapsing .superadmin-tab-text {
+  max-width: 0;
+  transform: translateX(-8px);
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
+}
+
+.superadmin-sidebar.is-opening .superadmin-tab-text {
+  max-width: 0;
+  transform: translateX(-8px);
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0s;
+}
+
+.superadmin-sidebar.collapsed .superadmin-link {
+  min-height: 38px;
+  font-size: 0.82rem;
+  justify-content: center;
+  padding: 0.45rem;
+}
+
+.superadmin-link-text {
+  opacity: 1;
+  max-width: 180px;
+  transform: translateX(0);
+  visibility: visible;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0s;
+}
+
+.superadmin-logout-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.superadmin-sidebar.collapsed .superadmin-link-text {
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-6px);
+  visibility: hidden;
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
+}
+
+.superadmin-sidebar.is-collapsing .superadmin-link-text {
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-6px);
+  visibility: hidden;
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
+}
+
+.superadmin-sidebar.is-opening .superadmin-link-text {
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-6px);
+  visibility: hidden;
+  transition: max-width 0.28s ease, opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0s;
+}
+
+.superadmin-sidebar.collapsed .superadmin-link.logout {
+  border-radius: 8px;
 }
 
 .dashboard-grid {
@@ -300,14 +604,15 @@
 }
 
 .metric-ring-card {
-  border: 1px solid #dfe6ee;
+  border: 1px solid #d5e2f0;
   border-radius: 12px;
-  background: #f8fbff;
+  background: #ffffff;
   padding: 0.9rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
+  box-shadow: 0 6px 16px rgba(31, 102, 200, 0.08);
 }
 
 .metric-ring-card h3 {
@@ -392,10 +697,11 @@
 }
 
 .superadmin-chart-card {
-  border: 1px solid #dfe6ee;
+  border: 1px solid #d5e2f0;
   border-radius: 12px;
-  background: #f8fbff;
+  background: #ffffff;
   padding: 0.9rem;
+  box-shadow: 0 6px 16px rgba(31, 102, 200, 0.08);
 }
 
 .superadmin-chart-card.chart-wide {
@@ -404,10 +710,11 @@
 }
 
 .sessions-card {
-  border: 1px solid #dfe6ee;
+  border: 1px solid #d5e2f0;
   border-radius: 12px;
-  background: #f8fbff;
+  background: #ffffff;
   padding: 0.9rem;
+  box-shadow: 0 6px 16px rgba(31, 102, 200, 0.08);
 }
 
 .sessions-card h3 {
@@ -433,7 +740,7 @@
 .sessions-bar-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #35b5cf, #3498db);
+  background: linear-gradient(90deg, var(--primary-color-soft), var(--primary-color));
 }
 
 .sessions-caption {
@@ -480,8 +787,8 @@
 
 .chart-date-picker:focus {
   outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.16);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(47, 95, 143, 0.18);
 }
 
 .chart-header span {
@@ -493,13 +800,43 @@
 .bars-wrap {
   height: 250px;
   border-radius: 10px;
-  background: linear-gradient(180deg, #f7fbff 0%, #eef5fc 100%);
-  border: 1px solid #dbe7f3;
+  background: linear-gradient(180deg, #fcfeff 0%, #f4f9ff 100%);
+  border: 1px solid #d7e6f7;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.55rem 0.6rem;
+}
+
+.activity-curve-chart {
+  width: 100%;
+  height: 200px;
+}
+
+.activity-curve-baseline {
+  stroke: #c9d8e8;
+  stroke-width: 1.2;
+}
+
+.activity-curve-line {
+  fill: none;
+  stroke: var(--primary-color);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.activity-curve-dot {
+  fill: #ffffff;
+  stroke: var(--primary-color-strong);
+  stroke-width: 2;
+}
+
+.curve-day-labels {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.6rem;
-  align-items: stretch;
-  padding: 0.55rem 0.6rem;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .bar-col {
@@ -593,14 +930,14 @@
   border: none;
   border-radius: 8px;
   padding: 0.55rem 0.8rem;
-  background: #3498db;
+  background: var(--primary-color);
   color: #fff;
   font-weight: 700;
   cursor: pointer;
 }
 
 .clinica-btn-primary:hover {
-  background: #2980b9;
+  background: var(--primary-color-strong);
 }
 
 .clinica-message {
@@ -670,6 +1007,27 @@
 .clinica-actions .reactivar {
   border-color: #b7dfca;
   color: #1f8f4b;
+}
+
+.clinica-actions .actual {
+  border-color: #c3d4ea;
+  background: #edf3fb;
+  color: #3c5e84;
+  cursor: default;
+}
+
+.session-current-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #b9d4f5;
+  background: #e8f2ff;
+  color: #1f66c8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  vertical-align: middle;
 }
 
 .clinica-modal-backdrop {
@@ -757,14 +1115,14 @@
 }
 
 .clinica-modal-actions .clinica-btn-save:not(:disabled) {
-  border-color: #3498db;
-  background: #3498db;
+  border-color: var(--primary-color);
+  background: var(--primary-color);
   color: #fff;
 }
 
 .clinica-modal-actions .clinica-btn-save:not(:disabled):hover {
-  border-color: #2980b9;
-  background: #2980b9;
+  border-color: var(--primary-color-strong);
+  background: var(--primary-color-strong);
 }
 
 .clinica-modal-actions .clinica-btn-save:disabled {
@@ -780,10 +1138,11 @@
 }
 
 .superadmin-card {
-  border: 1px solid #dfe6ee;
+  border: 1px solid #d5e2f0;
   border-radius: 12px;
   padding: 0.9rem;
-  background: #f8fbff;
+  background: #ffffff;
+  box-shadow: 0 6px 16px rgba(31, 102, 200, 0.08);
 }
 
 .superadmin-card h3 {
@@ -831,7 +1190,7 @@
 }
 
 .superadmin-login-btn:hover {
-  background: #2980b9;
+  background: var(--primary-color-strong);
 }
 
 @media (max-width: 900px) {
