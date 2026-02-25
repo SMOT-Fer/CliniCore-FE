@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import '../css/login.css';
 
@@ -129,12 +130,27 @@ export default function LoginPage() {
     <>
       <div className={`page-transition ${isExiting ? 'visible' : ''}`} aria-hidden="true" />
       <main className={`login-page ${isExiting ? 'is-exiting' : 'page-enter'}`}>
-        <section className="login-shell">
-          <article className="login-card dark-card">
-            <div className="logo-badge" aria-hidden="true">F</div>
+        <Link href="/" className="login-return-btn" aria-label="Volver al inicio">
+          ← Volver al inicio
+        </Link>
 
+        <section className="login-shell">
+          <aside className="login-hero" aria-hidden="true">
+            <div className="login-hero-content">
+              <h1>Welcome Back</h1>
+              <p>
+                StarMOT: plataforma segura para administrar usuarios, sesiones y operación en tiempo real.
+              </p>
+            </div>
+          </aside>
+
+          <article className="login-card">
             <div className="brand">
-              <h1>Login Here</h1>
+              <div className="login-brand-logo">
+                <img src="/logo.png" alt="Logo SMOT" />
+              </div>
+              <p className="brand-kicker">SMOT</p>
+              <h2>Sign in</h2>
             </div>
 
             <form onSubmit={handleSubmit} className="login-form" noValidate>
@@ -167,8 +183,16 @@ export default function LoginPage() {
                 />
               </div>
 
+              <div className="login-row">
+                <label className="remember-me" htmlFor="remember-session">
+                  <input id="remember-session" type="checkbox" />
+                  <span>Recordarme</span>
+                </label>
+                <span className="row-help">Acceso seguro</span>
+              </div>
+
               <button type="submit" className="btn-login" disabled={isLoading}>
-                {isLoading ? 'Iniciando sesión...' : 'Log In'}
+                {isLoading ? 'Iniciando sesión...' : 'Sign in now'}
               </button>
 
               {message && (
@@ -178,19 +202,10 @@ export default function LoginPage() {
               )}
             </form>
 
-            <div className="login-links">
-              <p>Lost your Password?</p>
-              <p>Don&apos;t have an account?</p>
+            <div className="login-footer-text">
+              <p>By clicking on “Sign in now” you agree to our Terms of Service and Privacy Policy.</p>
             </div>
           </article>
-
-          <aside className="login-hero" aria-hidden="true">
-            <h2>
-              BIENVENIDO AL
-              <br />
-              SAAS CLÍNICO
-            </h2>
-          </aside>
         </section>
       </main>
     </>

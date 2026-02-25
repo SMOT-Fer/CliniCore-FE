@@ -8,7 +8,7 @@ export default function HomePage() {
           Plataforma clínica segura
         </p>
         <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
-          SaaS Clínico para gestión de usuarios, pacientes y operaciones
+          StarMOT para gestión de usuarios, pacientes y operaciones
         </h1>
         <p className="mt-5 max-w-2xl text-base text-slate-300 sm:text-lg">
           Accede al sistema con tu cuenta corporativa para administrar módulos y flujos según tu rol.

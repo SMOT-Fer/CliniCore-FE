@@ -139,6 +139,11 @@ type Sesion = {
   created_at: string;
 };
 
+type RowDetail = {
+  title: string;
+  fields: Array<{ label: string; value: string }>;
+};
+
 function ordenarClinicas(lista: Clinica[]) {
   return [...lista].sort((a, b) => {
     const aDeleted = Boolean(a.deleted_at);
@@ -277,6 +282,10 @@ function Pagination({
 }
 
 export default function SuperadminPage() {
+  const MODAL_EXIT_DURATION_MS = 180;
+  const PAGE_EXIT_DURATION_MS = 500;
+  const SESSION_REVOKED_REDIRECT_MS = 1500;
+  const SESSION_WATCH_INTERVAL_MS = 10000;
   const router = useRouter();
   const [state, setState] = useState<SessionState>('loading');
   const [message, setMessage] = useState('Validando sesión...');
@@ -286,9 +295,20 @@ export default function SuperadminPage() {
   const [tabTransitionState, setTabTransitionState] = useState<'idle' | 'exiting' | 'entering'>('entering');
   const [sidebarState, setSidebarState] = useState<'expanded' | 'opening' | 'collapsing' | 'collapsed'>('collapsed');
   const sidebarCollapseTimerRef = useRef<number | null>(null);
+  const bodyScrollYRef = useRef(0);
+  const clinicaModalCloseTimerRef = useRef<number | null>(null);
+  const usuarioModalCloseTimerRef = useRef<number | null>(null);
+  const personaModalCloseTimerRef = useRef<number | null>(null);
+  const rowDetailCloseTimerRef = useRef<number | null>(null);
+  const sessionRevokedRedirectTimerRef = useRef<number | null>(null);
+  const initialBootstrapDoneRef = useRef(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
+  const [rowDetailClosing, setRowDetailClosing] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const [isSessionRevokedModalOpen, setIsSessionRevokedModalOpen] = useState(false);
   const [selectedEndDate, setSelectedEndDate] = useState(getTodayLocalIso());
   const [searchQuery, setSearchQuery] = useState('');
   const [openListCard, setOpenListCard] = useState<'clinicas' | 'usuarios' | null>(null);
@@ -297,6 +317,7 @@ export default function SuperadminPage() {
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
   const [usuariosLoading, setUsuariosLoading] = useState(false);
   const [usuarioModalOpen, setUsuarioModalOpen] = useState(false);
+  const [usuarioModalClosing, setUsuarioModalClosing] = useState(false);
   const [usuarioModalMode, setUsuarioModalMode] = useState<'create' | 'edit'>('create');
   const [usuarioEditingId, setUsuarioEditingId] = useState<string | null>(null);
   const [usuarioForm, setUsuarioForm] = useState<UsuarioForm>({
@@ -311,6 +332,7 @@ export default function SuperadminPage() {
   const [personas, setPersonas] = useState<PersonaAdmin[]>([]);
   const [personasLoading, setPersonasLoading] = useState(false);
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [personaModalClosing, setPersonaModalClosing] = useState(false);
   const [personaModalMode, setPersonaModalMode] = useState<'create' | 'edit'>('create');
   const [personaCreateMode, setPersonaCreateMode] = useState<'dni' | 'manual'>('dni');
   const [personaEditingId, setPersonaEditingId] = useState<string | null>(null);
@@ -334,6 +356,7 @@ export default function SuperadminPage() {
   const [clinicasOpciones, setClinicasOpciones] = useState<Clinica[]>([]);
   const [globalMessage, setGlobalMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [clinicaModalOpen, setClinicaModalOpen] = useState(false);
+  const [clinicaModalClosing, setClinicaModalClosing] = useState(false);
   const [clinicaModalMode, setClinicaModalMode] = useState<'create' | 'edit'>('create');
   const [clinicaEditingId, setClinicaEditingId] = useState<string | null>(null);
   const [clinicaForm, setClinicaForm] = useState<ClinicaForm>({
@@ -369,10 +392,151 @@ export default function SuperadminPage() {
     return '';
   };
 
+  const isRevokedError = (errorText: string) => /revocad/i.test(errorText || '');
+
+  const readErrorMessage = async (response: Response) => {
+    try {
+      const data = await response.clone().json();
+      return typeof data?.error === 'string' ? data.error : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const handleSessionRevoked = useCallback(() => {
+    if (isSessionRevokedModalOpen) return;
+
+    setIsMobileSidebarOpen(false);
+    document.body.classList.remove('superadmin-mobile-lock');
+    document.body.style.top = '';
+    localStorage.removeItem('sessionId');
+    setIsSessionRevokedModalOpen(true);
+
+    if (sessionRevokedRedirectTimerRef.current) {
+      window.clearTimeout(sessionRevokedRedirectTimerRef.current);
+      sessionRevokedRedirectTimerRef.current = null;
+    }
+
+    sessionRevokedRedirectTimerRef.current = window.setTimeout(() => {
+      router.replace('/login');
+    }, SESSION_REVOKED_REDIRECT_MS);
+  }, [isSessionRevokedModalOpen, router]);
+
+  const fetchWithAuthRetry = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const baseInit: RequestInit = {
+      credentials: 'include',
+      ...(init || {})
+    };
+
+    let response = await fetch(input, baseInit);
+    if (response.status !== 401) {
+      return response;
+    }
+
+    const meErrorText = await readErrorMessage(response);
+    const refreshResponse = await fetch(API_REFRESH, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!refreshResponse.ok) {
+      const refreshErrorText = await readErrorMessage(refreshResponse);
+      if (isRevokedError(meErrorText) || isRevokedError(refreshErrorText)) {
+        handleSessionRevoked();
+      }
+      return response;
+    }
+
+    response = await fetch(input, baseInit);
+    if (response.status === 401) {
+      const retryErrorText = await readErrorMessage(response);
+      if (isRevokedError(retryErrorText)) {
+        handleSessionRevoked();
+      }
+    }
+
+    return response;
+  }, [handleSessionRevoked]);
+
+  const openRowDetail = (title: string, fields: Array<{ label: string; value: string | number | null | undefined }>) => {
+    if (rowDetailCloseTimerRef.current) {
+      window.clearTimeout(rowDetailCloseTimerRef.current);
+      rowDetailCloseTimerRef.current = null;
+    }
+    setRowDetailClosing(false);
+    setRowDetail({
+      title,
+      fields: fields.map((field) => ({
+        label: field.label,
+        value: field.value === null || field.value === undefined || field.value === '' ? '-' : String(field.value)
+      }))
+    });
+  };
+
+  const closeClinicaModal = useCallback(() => {
+    if (!clinicaModalOpen || clinicaModalClosing) return;
+    if (clinicaModalCloseTimerRef.current) {
+      window.clearTimeout(clinicaModalCloseTimerRef.current);
+      clinicaModalCloseTimerRef.current = null;
+    }
+    setClinicaModalClosing(true);
+    clinicaModalCloseTimerRef.current = window.setTimeout(() => {
+      setClinicaModalOpen(false);
+      setClinicaModalClosing(false);
+      clinicaModalCloseTimerRef.current = null;
+    }, MODAL_EXIT_DURATION_MS);
+  }, [clinicaModalOpen, clinicaModalClosing]);
+
+  const closeUsuarioModal = useCallback(() => {
+    if (!usuarioModalOpen || usuarioModalClosing) return;
+    if (usuarioModalCloseTimerRef.current) {
+      window.clearTimeout(usuarioModalCloseTimerRef.current);
+      usuarioModalCloseTimerRef.current = null;
+    }
+    setUsuarioModalClosing(true);
+    usuarioModalCloseTimerRef.current = window.setTimeout(() => {
+      setUsuarioModalOpen(false);
+      setUsuarioModalClosing(false);
+      usuarioModalCloseTimerRef.current = null;
+    }, MODAL_EXIT_DURATION_MS);
+  }, [usuarioModalOpen, usuarioModalClosing]);
+
+  const closePersonaModal = useCallback(() => {
+    if (!personaModalOpen || personaModalClosing) return;
+    if (personaModalCloseTimerRef.current) {
+      window.clearTimeout(personaModalCloseTimerRef.current);
+      personaModalCloseTimerRef.current = null;
+    }
+    setPersonaModalClosing(true);
+    personaModalCloseTimerRef.current = window.setTimeout(() => {
+      setPersonaModalOpen(false);
+      setPersonaModalClosing(false);
+      personaModalCloseTimerRef.current = null;
+    }, MODAL_EXIT_DURATION_MS);
+  }, [personaModalOpen, personaModalClosing]);
+
+  const closeRowDetail = useCallback(() => {
+    if (!rowDetail || rowDetailClosing) return;
+    if (rowDetailCloseTimerRef.current) {
+      window.clearTimeout(rowDetailCloseTimerRef.current);
+      rowDetailCloseTimerRef.current = null;
+    }
+    setRowDetailClosing(true);
+    rowDetailCloseTimerRef.current = window.setTimeout(() => {
+      setRowDetail(null);
+      setRowDetailClosing(false);
+      rowDetailCloseTimerRef.current = null;
+    }, MODAL_EXIT_DURATION_MS);
+  }, [rowDetail, rowDetailClosing]);
+
   const handleLogout = async () => {
     if (isLoggingOut) return;
 
+    setIsMobileSidebarOpen(false);
+    document.body.classList.remove('superadmin-mobile-lock');
+    document.body.style.top = '';
     setIsLoggingOut(true);
+    setIsEntering(false);
     setIsExiting(true);
     try {
       await fetch(API_CSRF, { credentials: 'include' });
@@ -388,7 +552,7 @@ export default function SuperadminPage() {
     } finally {
       setTimeout(() => {
         router.replace('/login');
-      }, 420);
+      }, PAGE_EXIT_DURATION_MS);
     }
   };
 
@@ -405,11 +569,11 @@ export default function SuperadminPage() {
   const refreshDashboardStats = useCallback(async () => {
     try {
       const [clinicasResp, clinicasActivasResp, usuariosResp, sesionesResp, systemResp] = await Promise.all([
-        fetch(API_CLINICAS, { credentials: 'include' }),
-        fetch(API_CLINICAS_ACTIVAS, { credentials: 'include' }),
-        fetch(API_USUARIOS, { credentials: 'include' }),
-        fetch(API_SESIONES, { credentials: 'include' }),
-        fetch(`${API_SYSTEM_STATUS}?endDate=${selectedEndDate}`, { credentials: 'include' })
+        fetchWithAuthRetry(API_CLINICAS),
+        fetchWithAuthRetry(API_CLINICAS_ACTIVAS),
+        fetchWithAuthRetry(API_USUARIOS),
+        fetchWithAuthRetry(API_SESIONES),
+        fetchWithAuthRetry(`${API_SYSTEM_STATUS}?endDate=${selectedEndDate}`)
       ]);
 
       const clinicasData = clinicasResp.ok ? await clinicasResp.json() : { data: [] };
@@ -456,14 +620,14 @@ export default function SuperadminPage() {
     } catch {
       // Mantener fallback visual en caso de error
     }
-  }, [selectedEndDate]);
+  }, [selectedEndDate, fetchWithAuthRetry]);
 
   const cargarClinicas = async (silent = false) => {
     if (!silent) {
       setClinicasLoading(true);
     }
     try {
-      const response = await fetch(API_CLINICAS, { credentials: 'include' });
+      const response = await fetchWithAuthRetry(API_CLINICAS);
       const data = await response.json();
       if (response.ok && Array.isArray(data.data)) {
         setClinicas(ordenarClinicas(data.data));
@@ -483,7 +647,7 @@ export default function SuperadminPage() {
     }
 
     try {
-      const response = await fetch(API_USUARIOS, { credentials: 'include' });
+      const response = await fetchWithAuthRetry(API_USUARIOS);
       const data = await response.json();
       if (response.ok && Array.isArray(data.data)) {
         setUsuarios(ordenarUsuarios(data.data));
@@ -500,8 +664,8 @@ export default function SuperadminPage() {
   const cargarOpcionesUsuarios = async () => {
     try {
       const [personasResp, clinicasResp] = await Promise.all([
-        fetch(API_PERSONAS, { credentials: 'include' }),
-        fetch(API_CLINICAS_ACTIVAS, { credentials: 'include' })
+        fetchWithAuthRetry(API_PERSONAS),
+        fetchWithAuthRetry(API_CLINICAS_ACTIVAS)
       ]);
 
       const personasData = personasResp.ok ? await personasResp.json() : { data: [] };
@@ -519,6 +683,11 @@ export default function SuperadminPage() {
     setUsuarioEditingId(null);
     setUsuarioForm({ clinica_id: '', persona_id: '', email: '', password: '', rol: 'ADMIN' });
     setUsuarioMessage(null);
+    if (usuarioModalCloseTimerRef.current) {
+      window.clearTimeout(usuarioModalCloseTimerRef.current);
+      usuarioModalCloseTimerRef.current = null;
+    }
+    setUsuarioModalClosing(false);
     setUsuarioModalOpen(true);
   };
 
@@ -533,6 +702,11 @@ export default function SuperadminPage() {
       rol: usuario.rol === 'SUPERADMIN' ? 'ADMIN' : usuario.rol
     });
     setUsuarioMessage(null);
+    if (usuarioModalCloseTimerRef.current) {
+      window.clearTimeout(usuarioModalCloseTimerRef.current);
+      usuarioModalCloseTimerRef.current = null;
+    }
+    setUsuarioModalClosing(false);
     setUsuarioModalOpen(true);
   };
 
@@ -591,7 +765,7 @@ export default function SuperadminPage() {
         });
       }
 
-      setUsuarioModalOpen(false);
+      closeUsuarioModal();
       await cargarUsuarios(true);
 
       if (activeTab === 'Dashboard') {
@@ -669,6 +843,11 @@ export default function SuperadminPage() {
     setClinicaEditingId(null);
     setClinicaForm({ nombre: '', ruc: '', direccion: '', telefono: '', estado: 'ACTIVA' });
     setClinicaMessage(null);
+    if (clinicaModalCloseTimerRef.current) {
+      window.clearTimeout(clinicaModalCloseTimerRef.current);
+      clinicaModalCloseTimerRef.current = null;
+    }
+    setClinicaModalClosing(false);
     setClinicaModalOpen(true);
   };
 
@@ -678,7 +857,7 @@ export default function SuperadminPage() {
     }
 
     try {
-      const response = await fetch(API_PERSONAS, { credentials: 'include' });
+      const response = await fetchWithAuthRetry(API_PERSONAS);
       const data = await response.json();
       if (response.ok && Array.isArray(data.data)) {
         setPersonas(ordenarPersonas(data.data));
@@ -698,7 +877,7 @@ export default function SuperadminPage() {
     }
 
     try {
-      const response = await fetch(API_SESIONES, { credentials: 'include' });
+      const response = await fetchWithAuthRetry(API_SESIONES);
       const data = await response.json();
       if (response.ok && Array.isArray(data.data)) {
         setSesiones(data.data);
@@ -728,11 +907,7 @@ export default function SuperadminPage() {
         // Si es la sesión actual, redirigir a login
         const sesionIdActualFromStorage = localStorage.getItem('sessionId');
         if (sesionId === sesionIdActualFromStorage) {
-          localStorage.removeItem('sessionId');
-          setGlobalMessage({ type: 'success', text: 'Sesión revocada. Redirigiendo a login...' });
-          setTimeout(() => {
-            router.push('/login');
-          }, 1000);
+          handleSessionRevoked();
         } else {
           setGlobalMessage({ type: 'success', text: 'Sesión revocada correctamente.' });
         }
@@ -757,6 +932,11 @@ export default function SuperadminPage() {
       fecha_nacimiento: ''
     });
     setPersonaMessage(null);
+    if (personaModalCloseTimerRef.current) {
+      window.clearTimeout(personaModalCloseTimerRef.current);
+      personaModalCloseTimerRef.current = null;
+    }
+    setPersonaModalClosing(false);
     setPersonaModalOpen(true);
   };
 
@@ -773,6 +953,11 @@ export default function SuperadminPage() {
       fecha_nacimiento: persona.fecha_nacimiento ? String(persona.fecha_nacimiento).slice(0, 10) : ''
     });
     setPersonaMessage(null);
+    if (personaModalCloseTimerRef.current) {
+      window.clearTimeout(personaModalCloseTimerRef.current);
+      personaModalCloseTimerRef.current = null;
+    }
+    setPersonaModalClosing(false);
     setPersonaModalOpen(true);
   };
 
@@ -825,7 +1010,7 @@ export default function SuperadminPage() {
           });
         }
 
-        setPersonaModalOpen(false);
+        closePersonaModal();
         await cargarPersonas(true);
         await cargarOpcionesUsuarios();
         return;
@@ -893,7 +1078,7 @@ export default function SuperadminPage() {
         });
       }
 
-      setPersonaModalOpen(false);
+      closePersonaModal();
       await cargarPersonas(true);
       await cargarOpcionesUsuarios();
     } catch {
@@ -970,6 +1155,11 @@ export default function SuperadminPage() {
       estado: clinica.estado || 'ACTIVA'
     });
     setClinicaMessage(null);
+    if (clinicaModalCloseTimerRef.current) {
+      window.clearTimeout(clinicaModalCloseTimerRef.current);
+      clinicaModalCloseTimerRef.current = null;
+    }
+    setClinicaModalClosing(false);
     setClinicaModalOpen(true);
   };
 
@@ -1040,7 +1230,7 @@ export default function SuperadminPage() {
           return ordenarClinicas([data.data, ...prev]);
         });
       }
-      setClinicaModalOpen(false);
+      closeClinicaModal();
       await cargarClinicas(true);
       if (activeTab === 'Dashboard') {
         await refreshDashboardStats();
@@ -1125,6 +1315,7 @@ export default function SuperadminPage() {
         }
 
         if (meResponse.status === 401) {
+          const meErrorText = await readErrorMessage(meResponse);
           const refreshResponse = await fetch(API_REFRESH, {
             method: 'POST',
             credentials: 'include'
@@ -1140,6 +1331,17 @@ export default function SuperadminPage() {
                 return;
               }
             }
+          } else {
+            const refreshErrorText = await readErrorMessage(refreshResponse);
+            if (isRevokedError(meErrorText) || isRevokedError(refreshErrorText)) {
+              handleSessionRevoked();
+              return;
+            }
+          }
+
+          if (isRevokedError(meErrorText)) {
+            handleSessionRevoked();
+            return;
           }
         }
 
@@ -1152,24 +1354,81 @@ export default function SuperadminPage() {
     };
 
     validateRole();
-  }, [router]);
+  }, [handleSessionRevoked]);
+
+  useEffect(() => {
+    if (state !== 'allowed' || isSessionRevokedModalOpen) return;
+
+    let isCancelled = false;
+
+    const watchSession = async () => {
+      try {
+        const meResponse = await fetch(API_ME, { credentials: 'include' });
+        if (meResponse.ok || meResponse.status !== 401) return;
+
+        const meErrorText = await readErrorMessage(meResponse);
+        const refreshResponse = await fetch(API_REFRESH, {
+          method: 'POST',
+          credentials: 'include'
+        });
+
+        if (refreshResponse.ok) return;
+
+        const refreshErrorText = await readErrorMessage(refreshResponse);
+        if (!isCancelled && (isRevokedError(meErrorText) || isRevokedError(refreshErrorText))) {
+          handleSessionRevoked();
+        }
+      } catch {
+      }
+    };
+
+    void watchSession();
+    const intervalId = window.setInterval(watchSession, SESSION_WATCH_INTERVAL_MS);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [state, isSessionRevokedModalOpen, handleSessionRevoked]);
 
   useEffect(() => {
     // Si no está autenticado/autorizado, redirigir a login
-    if (state === 'denied') {
+    if (state === 'denied' && !isSessionRevokedModalOpen) {
       localStorage.removeItem('sessionId');
       const timeout = setTimeout(() => {
         router.push('/login');
       }, 500);
       return () => clearTimeout(timeout);
     }
-  }, [state, router]);
+  }, [state, router, isSessionRevokedModalOpen]);
+
+  useEffect(() => {
+    if (state === 'allowed') {
+      setIsExiting(false);
+      setIsEntering(true);
+      return;
+    }
+
+    if (state === 'denied') {
+      setIsEntering(false);
+    }
+  }, [state]);
 
   useEffect(() => {
     if (state !== 'allowed') return;
-    const frame = requestAnimationFrame(() => setIsEntering(true));
-    return () => cancelAnimationFrame(frame);
-  }, [state]);
+    if (initialBootstrapDoneRef.current) return;
+
+    initialBootstrapDoneRef.current = true;
+
+    void Promise.allSettled([
+      refreshDashboardStats(),
+      cargarClinicas(true),
+      cargarUsuarios(true),
+      cargarOpcionesUsuarios(),
+      cargarPersonas(true),
+      cargarSesiones(true)
+    ]);
+  }, [state, refreshDashboardStats]);
 
   useEffect(() => {
     // Obtener el ID de la sesión actual del localStorage
@@ -1541,6 +1800,7 @@ export default function SuperadminPage() {
     if (nextTab === activeTab || tabTransitionState === 'exiting') return;
     setActiveTab(nextTab);
     setTabTransitionState('exiting');
+    setIsMobileSidebarOpen(false);
   }, [activeTab, tabTransitionState]);
 
   useEffect(() => {
@@ -1565,12 +1825,114 @@ export default function SuperadminPage() {
   }, [tabTransitionState]);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [renderTab]);
+
+  useEffect(() => {
     return () => {
       if (sidebarCollapseTimerRef.current) {
         window.clearTimeout(sidebarCollapseTimerRef.current);
       }
     };
   }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 901px)');
+    const handleViewportChange = () => {
+      if (mediaQuery.matches) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    handleViewportChange();
+    mediaQuery.addEventListener('change', handleViewportChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleViewportChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const isMobileViewport = window.matchMedia('(max-width: 900px)').matches;
+    if (!isMobileViewport) {
+      document.body.classList.remove('superadmin-mobile-lock');
+      document.body.style.top = '';
+      return;
+    }
+
+    if (isMobileSidebarOpen) {
+      bodyScrollYRef.current = window.scrollY;
+      document.body.style.top = `-${bodyScrollYRef.current}px`;
+      document.body.classList.add('superadmin-mobile-lock');
+      return;
+    }
+
+    const savedTop = document.body.style.top;
+    const restoredScroll = savedTop ? Math.abs(parseInt(savedTop, 10)) : bodyScrollYRef.current;
+    document.body.classList.remove('superadmin-mobile-lock');
+    document.body.style.top = '';
+    window.scrollTo(0, restoredScroll || 0);
+  }, [isMobileSidebarOpen]);
+
+  useEffect(() => {
+    return () => {
+      document.body.classList.remove('superadmin-mobile-lock');
+      document.body.style.top = '';
+
+      if (clinicaModalCloseTimerRef.current) {
+        window.clearTimeout(clinicaModalCloseTimerRef.current);
+      }
+      if (usuarioModalCloseTimerRef.current) {
+        window.clearTimeout(usuarioModalCloseTimerRef.current);
+      }
+      if (personaModalCloseTimerRef.current) {
+        window.clearTimeout(personaModalCloseTimerRef.current);
+      }
+      if (rowDetailCloseTimerRef.current) {
+        window.clearTimeout(rowDetailCloseTimerRef.current);
+      }
+      if (sessionRevokedRedirectTimerRef.current) {
+        window.clearTimeout(sessionRevokedRedirectTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const hasModalOpen = clinicaModalOpen || usuarioModalOpen || personaModalOpen || Boolean(rowDetail);
+    if (!hasModalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      if (rowDetail) {
+        closeRowDetail();
+        return;
+      }
+      if (personaModalOpen) {
+        closePersonaModal();
+        return;
+      }
+      if (usuarioModalOpen) {
+        closeUsuarioModal();
+        return;
+      }
+      if (clinicaModalOpen) {
+        closeClinicaModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    clinicaModalOpen,
+    usuarioModalOpen,
+    personaModalOpen,
+    rowDetail,
+    closeClinicaModal,
+    closeUsuarioModal,
+    closePersonaModal,
+    closeRowDetail
+  ]);
 
   const handleSidebarMouseEnter = useCallback(() => {
     if (sidebarCollapseTimerRef.current) {
@@ -1602,13 +1964,7 @@ export default function SuperadminPage() {
   const isSidebarCompact = sidebarState === 'collapsed' || sidebarState === 'collapsing';
 
   if (state === 'loading') {
-    return (
-      <main className="superadmin-page">
-        <section className="superadmin-loading">
-          <p className="superadmin-message">Validando acceso de SUPERADMIN...</p>
-        </section>
-      </main>
-    );
+    return null;
   }
 
   if (state === 'denied') {
@@ -1631,20 +1987,25 @@ export default function SuperadminPage() {
   }
 
   return (
-    <main className={`superadmin-page ${isEntering ? 'is-entered' : ''} ${isExiting ? 'is-exiting' : ''}`}>
-      <div className={`superadmin-exit-overlay ${isExiting ? 'visible' : ''}`} aria-hidden="true" />
-      <section className={`superadmin-layout ${isSidebarCompact ? 'sidebar-collapsed' : ''}`}>
+    <main className={`superadmin-page ${isEntering ? 'is-entered' : ''} ${isLoggingOut && isExiting ? 'is-exiting' : ''}`}>
+      <div
+        className={`superadmin-transition-layer ${isLoggingOut && isExiting ? 'is-exiting' : ''} ${isEntering ? 'is-entered' : ''}`}
+        aria-hidden="true"
+      />
+      <section className={`superadmin-layout ${isSidebarCompact ? 'sidebar-collapsed' : ''} ${isMobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
         <aside
           className={`superadmin-sidebar ${isSidebarCompact ? 'collapsed' : ''} ${sidebarState === 'collapsing' ? 'is-collapsing' : ''} ${sidebarState === 'opening' ? 'is-opening' : ''}`}
           onMouseEnter={handleSidebarMouseEnter}
           onMouseLeave={handleSidebarMouseLeave}
         >
           <div className="superadmin-brand">
-            <div className="superadmin-brand-logo" aria-hidden="true">F</div>
-            <h1 className="superadmin-title">SaaS Clínico</h1>
+            <div className="superadmin-brand-logo">
+              <img src="/logo.png" alt="Logo SMOT" className="superadmin-brand-logo-img" />
+            </div>
+            <h1 className="superadmin-title">StarMOT</h1>
           </div>
 
-          <p className="superadmin-nav-label">Main</p>
+          <p className="superadmin-nav-label">SMOT</p>
           <nav className="superadmin-nav">
             {TABS.map((tab) => (
               <button
@@ -1678,8 +2039,24 @@ export default function SuperadminPage() {
           </div>
         </aside>
 
+        <button
+          type="button"
+          className="superadmin-mobile-backdrop"
+          aria-label="Cerrar menú"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+
         <section className="superadmin-content">
           <header className="superadmin-topbar">
+            <button
+              type="button"
+              className="superadmin-mobile-menu-btn"
+              aria-label={isMobileSidebarOpen ? 'Cerrar menú' : 'Abrir menú'}
+              aria-expanded={isMobileSidebarOpen}
+              onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
+            >
+              <span aria-hidden="true">☰</span>
+            </button>
             <input
               className="superadmin-search"
               type="text"
@@ -1687,6 +2064,11 @@ export default function SuperadminPage() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
+
+            <div className="superadmin-topbar-meta" aria-label="Estado de sesión">
+              <span className="badge-open">Activo</span>
+              <span className="badge-role">Rol: {usuario?.rol || 'SUPERADMIN'}</span>
+            </div>
           </header>
 
           <div className="superadmin-heading-wrap">
@@ -1851,7 +2233,7 @@ export default function SuperadminPage() {
                 </div>
 
                 <div className="clinicas-table-wrap">
-                  <table className="clinicas-table">
+                  <table className="clinicas-table clinicas-table--clinicas">
                     <thead>
                       <tr>
                         <th>Nombre</th>
@@ -1890,6 +2272,20 @@ export default function SuperadminPage() {
                                 <td>{new Date(clinica.created_at).toLocaleString('es-PE')}</td>
                                 <td>
                                   <div className="clinica-actions">
+                                    <button
+                                      type="button"
+                                      className="detalle"
+                                      onClick={() => openRowDetail(`Clínica: ${clinica.nombre}`, [
+                                        { label: 'Nombre', value: clinica.nombre },
+                                        { label: 'RUC', value: clinica.ruc },
+                                        { label: 'Dirección', value: clinica.direccion },
+                                        { label: 'Teléfono', value: clinica.telefono },
+                                        { label: 'Estado', value: desactivada ? 'INACTIVA' : 'ACTIVA' },
+                                        { label: 'Creación', value: new Date(clinica.created_at).toLocaleString('es-PE') }
+                                      ])}
+                                    >
+                                      👁 Ver
+                                    </button>
                                     <button type="button" onClick={() => abrirModalEditarClinica(clinica)}>Editar</button>
                                     {desactivada ? (
                                       <button type="button" className="reactivar" onClick={() => reactivarClinica(clinica.id)}>
@@ -1921,8 +2317,17 @@ export default function SuperadminPage() {
               </article>
 
               {clinicaModalOpen && (
-                <div className="clinica-modal-backdrop" role="dialog" aria-modal="true">
-                  <section className="clinica-modal">
+                <div
+                  className={`clinica-modal-backdrop ${clinicaModalClosing ? 'is-closing' : ''}`}
+                  role="dialog"
+                  aria-modal="true"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) {
+                      closeClinicaModal();
+                    }
+                  }}
+                >
+                  <section className={`clinica-modal ${clinicaModalClosing ? 'is-closing' : ''}`}>
                     <h3>{clinicaModalMode === 'create' ? 'Nueva clínica' : 'Editar clínica'}</h3>
 
                     <form onSubmit={guardarClinica} className="clinica-form">
@@ -1978,7 +2383,7 @@ export default function SuperadminPage() {
                       </label>
 
                       <div className="clinica-modal-actions">
-                        <button type="button" className="clinica-btn-cancel" onClick={() => setClinicaModalOpen(false)}>Cancelar</button>
+                        <button type="button" className="clinica-btn-cancel" onClick={closeClinicaModal}>Cancelar</button>
                         <button type="submit" className="clinica-btn-primary clinica-btn-save" disabled={!clinicaFormValidation.formValido}>Guardar</button>
                       </div>
                     </form>
@@ -1997,7 +2402,7 @@ export default function SuperadminPage() {
                 </div>
 
                 <div className="clinicas-table-wrap">
-                  <table className="clinicas-table">
+                  <table className="clinicas-table clinicas-table--usuarios">
                     <thead>
                       <tr>
                         <th>Email</th>
@@ -2036,6 +2441,20 @@ export default function SuperadminPage() {
                                 <td>{new Date(usuarioItem.created_at).toLocaleString('es-PE')}</td>
                                 <td>
                                   <div className="clinica-actions">
+                                    <button
+                                      type="button"
+                                      className="detalle"
+                                      onClick={() => openRowDetail(`Usuario: ${usuarioItem.email}`, [
+                                        { label: 'Email', value: usuarioItem.email },
+                                        { label: 'Rol', value: usuarioItem.rol },
+                                        { label: 'Persona', value: personaNombrePorId[usuarioItem.persona_id] || usuarioItem.persona_id },
+                                        { label: 'Clínica', value: clinicaNombrePorId[usuarioItem.clinica_id || ''] || usuarioItem.clinica_id || '-' },
+                                        { label: 'Estado', value: desactivado ? 'INACTIVO' : usuarioItem.estado },
+                                        { label: 'Creación', value: new Date(usuarioItem.created_at).toLocaleString('es-PE') }
+                                      ])}
+                                    >
+                                      👁 Ver
+                                    </button>
                                     <button type="button" onClick={() => abrirModalEditarUsuario(usuarioItem)}>Editar</button>
                                     {desactivado ? (
                                       <button type="button" className="reactivar" onClick={() => reactivarUsuario(usuarioItem.id)}>
@@ -2067,8 +2486,17 @@ export default function SuperadminPage() {
               </article>
 
               {usuarioModalOpen && (
-                <div className="clinica-modal-backdrop" role="dialog" aria-modal="true">
-                  <section className="clinica-modal">
+                <div
+                  className={`clinica-modal-backdrop ${usuarioModalClosing ? 'is-closing' : ''}`}
+                  role="dialog"
+                  aria-modal="true"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) {
+                      closeUsuarioModal();
+                    }
+                  }}
+                >
+                  <section className={`clinica-modal ${usuarioModalClosing ? 'is-closing' : ''}`}>
                     <h3>{usuarioModalMode === 'create' ? 'Nuevo usuario' : 'Editar usuario'}</h3>
 
                     <form onSubmit={guardarUsuario} className="clinica-form">
@@ -2146,7 +2574,7 @@ export default function SuperadminPage() {
                       </label>
 
                       <div className="clinica-modal-actions">
-                        <button type="button" className="clinica-btn-cancel" onClick={() => setUsuarioModalOpen(false)}>Cancelar</button>
+                        <button type="button" className="clinica-btn-cancel" onClick={closeUsuarioModal}>Cancelar</button>
                         <button type="submit" className="clinica-btn-primary clinica-btn-save" disabled={!usuarioFormValidation.formValido}>Guardar</button>
                       </div>
                     </form>
@@ -2165,7 +2593,7 @@ export default function SuperadminPage() {
                 </div>
 
                 <div className="clinicas-table-wrap">
-                  <table className="clinicas-table">
+                  <table className="clinicas-table clinicas-table--personas">
                     <thead>
                       <tr>
                         <th>DNI</th>
@@ -2206,6 +2634,22 @@ export default function SuperadminPage() {
                                 <td>{new Date(personaItem.created_at).toLocaleString('es-PE')}</td>
                                 <td>
                                   <div className="clinica-actions">
+                                    <button
+                                      type="button"
+                                      className="detalle"
+                                      onClick={() => openRowDetail(`Persona: ${personaItem.nombres}`, [
+                                        { label: 'DNI', value: personaItem.dni },
+                                        { label: 'Nombres', value: personaItem.nombres },
+                                        { label: 'Apellido paterno', value: personaItem.apellido_paterno },
+                                        { label: 'Apellido materno', value: personaItem.apellido_materno },
+                                        { label: 'Sexo', value: personaItem.sexo },
+                                        { label: 'Fecha nacimiento', value: new Date(personaItem.fecha_nacimiento).toLocaleDateString('es-PE') },
+                                        { label: 'Creación', value: new Date(personaItem.created_at).toLocaleString('es-PE') },
+                                        { label: 'Estado', value: desactivada ? 'INACTIVA' : 'ACTIVA' }
+                                      ])}
+                                    >
+                                      👁 Ver
+                                    </button>
                                     <button type="button" onClick={() => abrirModalEditarPersona(personaItem)}>Editar</button>
                                     {desactivada ? (
                                       <button type="button" className="reactivar" onClick={() => reactivarPersona(personaItem.id)}>
@@ -2237,8 +2681,17 @@ export default function SuperadminPage() {
               </article>
 
               {personaModalOpen && (
-                <div className="clinica-modal-backdrop" role="dialog" aria-modal="true">
-                  <section className="clinica-modal">
+                <div
+                  className={`clinica-modal-backdrop ${personaModalClosing ? 'is-closing' : ''}`}
+                  role="dialog"
+                  aria-modal="true"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) {
+                      closePersonaModal();
+                    }
+                  }}
+                >
+                  <section className={`clinica-modal ${personaModalClosing ? 'is-closing' : ''}`}>
                     <h3>{personaModalMode === 'create' ? 'Nueva persona' : 'Editar persona'}</h3>
 
                     <form onSubmit={guardarPersona} className="clinica-form">
@@ -2328,11 +2781,11 @@ export default function SuperadminPage() {
                       )}
 
                       {personaModalMode === 'create' && personaCreateMode === 'dni' ? (
-                        <p className="superadmin-description">Se consultará el DNI en BD y API externa para completar datos automáticamente.</p>
+                        <p className="persona-dni-hint">Se consultará el DNI en BD y API externa para completar datos automáticamente.</p>
                       ) : null}
 
                       <div className="clinica-modal-actions">
-                        <button type="button" className="clinica-btn-cancel" onClick={() => setPersonaModalOpen(false)}>Cancelar</button>
+                        <button type="button" className="clinica-btn-cancel" onClick={closePersonaModal}>Cancelar</button>
                         <button
                           type="submit"
                           className="clinica-btn-primary clinica-btn-save"
@@ -2356,7 +2809,7 @@ export default function SuperadminPage() {
                 </div>
 
                 <div className="clinicas-table-wrap">
-                  <table className="clinicas-table">
+                  <table className="clinicas-table clinicas-table--sesiones">
                     <thead>
                       <tr>
                         <th>Email</th>
@@ -2395,6 +2848,19 @@ export default function SuperadminPage() {
                                 <td>{new Date(sesionItem.expires_at).toLocaleString('es-PE')}</td>
                                 <td>
                                   <div className="clinica-actions">
+                                    <button
+                                      type="button"
+                                      className="detalle"
+                                      onClick={() => openRowDetail(`Sesión: ${sesionItem.email || 'N/A'}`, [
+                                        { label: 'Email', value: sesionItem.email || 'N/A' },
+                                        { label: 'Rol', value: sesionItem.rol || 'N/A' },
+                                        { label: 'Creación', value: new Date(sesionItem.created_at).toLocaleString('es-PE') },
+                                        { label: 'Expira', value: new Date(sesionItem.expires_at).toLocaleString('es-PE') },
+                                        { label: 'Estado', value: esSesionActual ? 'Sesión actual' : 'Activa' }
+                                      ])}
+                                    >
+                                      👁 Ver
+                                    </button>
                                     <button
                                       type="button"
                                       className={esSesionActual ? 'actual' : 'desactivar'}
@@ -2438,6 +2904,20 @@ export default function SuperadminPage() {
         </section>
       </section>
 
+      {isSessionRevokedModalOpen && (
+        <div
+          className="clinica-modal-backdrop"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="session-revoked-title"
+        >
+          <section className="clinica-modal clinica-modal-detail superadmin-revoked-modal">
+            <h3 id="session-revoked-title">Tu sesión fue revocada</h3>
+            <p className="superadmin-revoked-copy">Por seguridad, te redirigiremos al login.</p>
+          </section>
+        </div>
+      )}
+
       {globalMessage && (
         <div style={{
           position: 'fixed',
@@ -2463,6 +2943,38 @@ export default function SuperadminPage() {
           }}>
             {globalMessage.type === 'success' ? '✓' : '✕'} {globalMessage.text}
           </p>
+        </div>
+      )}
+
+      {rowDetail && (
+        <div
+          className={`clinica-modal-backdrop ${rowDetailClosing ? 'is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeRowDetail();
+            }
+          }}
+        >
+          <section className={`clinica-modal clinica-modal-detail ${rowDetailClosing ? 'is-closing' : ''}`}>
+            <h3>{rowDetail.title}</h3>
+
+            <dl className="detail-grid">
+              {rowDetail.fields.map((field) => (
+                <div key={`${field.label}-${field.value}`} className="detail-grid-item">
+                  <dt>{field.label}</dt>
+                  <dd>{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="clinica-modal-actions">
+              <button type="button" className="clinica-btn-primary clinica-btn-save" onClick={closeRowDetail}>
+                Cerrar
+              </button>
+            </div>
+          </section>
         </div>
       )}
 
