@@ -16,6 +16,7 @@ const API_CLINICAS_ACTIVAS = `${API_BASE}/clinicas/public/activas`;
 const API_USUARIOS = `${API_BASE}/usuarios`;
 const API_PERSONAS = `${API_BASE}/personas`;
 const API_SESIONES = `${API_BASE}/admin/sesiones`;
+const API_DASHBOARD_SUMMARY = `${API_BASE}/admin/dashboard-summary`;
 const API_SYSTEM_STATUS = `${API_BASE}/admin/system-status`;
 const MAX_TOOLTIP_ITEMS = 10;
 
@@ -285,7 +286,7 @@ export default function SuperadminPage() {
   const MODAL_EXIT_DURATION_MS = 180;
   const PAGE_EXIT_DURATION_MS = 500;
   const SESSION_REVOKED_REDIRECT_MS = 1500;
-  const SESSION_WATCH_INTERVAL_MS = 10000;
+  const SESSION_WATCH_INTERVAL_MS = 120000;
   const router = useRouter();
   const [state, setState] = useState<SessionState>('loading');
   const [message, setMessage] = useState('Validando sesión...');
@@ -301,7 +302,12 @@ export default function SuperadminPage() {
   const personaModalCloseTimerRef = useRef<number | null>(null);
   const rowDetailCloseTimerRef = useRef<number | null>(null);
   const sessionRevokedRedirectTimerRef = useRef<number | null>(null);
-  const initialBootstrapDoneRef = useRef(false);
+  const loadedTabsRef = useRef({
+    Clinicas: false,
+    Usuarios: false,
+    Personas: false,
+    Sesiones: false
+  });
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
@@ -568,26 +574,12 @@ export default function SuperadminPage() {
 
   const refreshDashboardStats = useCallback(async () => {
     try {
-      const [clinicasResp, clinicasActivasResp, usuariosResp, sesionesResp, systemResp] = await Promise.all([
-        fetchWithAuthRetry(API_CLINICAS),
-        fetchWithAuthRetry(API_CLINICAS_ACTIVAS),
-        fetchWithAuthRetry(API_USUARIOS),
-        fetchWithAuthRetry(API_SESIONES),
-        fetchWithAuthRetry(`${API_SYSTEM_STATUS}?endDate=${selectedEndDate}`)
-      ]);
+      const response = await fetchWithAuthRetry(`${API_DASHBOARD_SUMMARY}?endDate=${selectedEndDate}`);
+      const data = response.ok ? await response.json() : { data: null };
+      const summary = data?.data;
 
-      const clinicasData = clinicasResp.ok ? await clinicasResp.json() : { data: [] };
-      const clinicasActivasData = clinicasActivasResp.ok ? await clinicasActivasResp.json() : { data: [] };
-      const usuariosData = usuariosResp.ok ? await usuariosResp.json() : { data: [] };
-      const sesionesData = sesionesResp.ok ? await sesionesResp.json() : { data: [] };
-      const systemData = systemResp.ok ? await systemResp.json() : { data: { actividad7dias: [] } };
-
-      const clinicas = Array.isArray(clinicasData.data) ? clinicasData.data : [];
-      const clinicasActivas = Array.isArray(clinicasActivasData.data) ? clinicasActivasData.data : [];
-      const usuarios = Array.isArray(usuariosData.data) ? usuariosData.data : [];
-      const sesiones = Array.isArray(sesionesData.data) ? sesionesData.data : [];
-      const actividad = Array.isArray(systemData.data?.actividad7dias)
-        ? systemData.data.actividad7dias.map((item: { dia?: string; etiqueta?: string; total?: number }) => ({
+      const actividad = Array.isArray(summary?.actividad7dias)
+        ? summary.actividad7dias.map((item: { dia?: string; etiqueta?: string; total?: number }) => ({
             dia: item.dia || '',
             etiqueta: item.etiqueta || 'DIA',
             total: item.total || 0
@@ -598,22 +590,16 @@ export default function SuperadminPage() {
             total
           }));
 
-      const seguridad = Array.isArray(systemData.data?.seguridad)
-        ? systemData.data.seguridad
-        : [];
-
-      const usuariosActivos = usuarios.filter((item: { estado?: string }) => item.estado === 'ACTIVO');
+      const seguridad = Array.isArray(summary?.seguridad) ? summary.seguridad : [];
 
       setStats({
-        clinicasTotal: clinicas.length,
-        clinicasActivas: clinicasActivas.length,
-        clinicasActivasNombres: clinicasActivas
-          .map((item: { nombre?: string }) => item.nombre || 'Sin nombre'),
-        usuariosTotal: usuarios.length,
-        usuariosActivos: usuariosActivos.length,
-        usuariosActivosNombres: usuariosActivos
-          .map((item: { email?: string }) => item.email || 'Sin email'),
-        sesionesActivas: sesiones.length,
+        clinicasTotal: Number(summary?.clinicasTotal || 0),
+        clinicasActivas: Number(summary?.clinicasActivas || 0),
+        clinicasActivasNombres: Array.isArray(summary?.clinicasActivasNombres) ? summary.clinicasActivasNombres : [],
+        usuariosTotal: Number(summary?.usuariosTotal || 0),
+        usuariosActivos: Number(summary?.usuariosActivos || 0),
+        usuariosActivosNombres: Array.isArray(summary?.usuariosActivosNombres) ? summary.usuariosActivosNombres : [],
+        sesionesActivas: Number(summary?.sesionesActivas || 0),
         actividadSemanal: actividad,
         seguridad
       });
@@ -1382,7 +1368,6 @@ export default function SuperadminPage() {
       }
     };
 
-    void watchSession();
     const intervalId = window.setInterval(watchSession, SESSION_WATCH_INTERVAL_MS);
 
     return () => {
@@ -1415,22 +1400,6 @@ export default function SuperadminPage() {
   }, [state]);
 
   useEffect(() => {
-    if (state !== 'allowed') return;
-    if (initialBootstrapDoneRef.current) return;
-
-    initialBootstrapDoneRef.current = true;
-
-    void Promise.allSettled([
-      refreshDashboardStats(),
-      cargarClinicas(true),
-      cargarUsuarios(true),
-      cargarOpcionesUsuarios(),
-      cargarPersonas(true),
-      cargarSesiones(true)
-    ]);
-  }, [state, refreshDashboardStats]);
-
-  useEffect(() => {
     // Obtener el ID de la sesión actual del localStorage
     const id = localStorage.getItem('sessionId');
     setSessionIdActual(id);
@@ -1444,12 +1413,16 @@ export default function SuperadminPage() {
 
   useEffect(() => {
     if (state === 'allowed' && activeTab === 'Clinicas') {
+      if (loadedTabsRef.current.Clinicas) return;
+      loadedTabsRef.current.Clinicas = true;
       cargarClinicas();
     }
   }, [state, activeTab]);
 
   useEffect(() => {
     if (state === 'allowed' && activeTab === 'Usuarios') {
+      if (loadedTabsRef.current.Usuarios) return;
+      loadedTabsRef.current.Usuarios = true;
       cargarUsuarios();
       cargarOpcionesUsuarios();
     }
@@ -1457,12 +1430,16 @@ export default function SuperadminPage() {
 
   useEffect(() => {
     if (state === 'allowed' && activeTab === 'Personas') {
+      if (loadedTabsRef.current.Personas) return;
+      loadedTabsRef.current.Personas = true;
       cargarPersonas();
     }
   }, [state, activeTab]);
 
   useEffect(() => {
     if (state === 'allowed' && activeTab === 'Sesiones') {
+      if (loadedTabsRef.current.Sesiones) return;
+      loadedTabsRef.current.Sesiones = true;
       cargarSesiones();
     }
   }, [state, activeTab]);

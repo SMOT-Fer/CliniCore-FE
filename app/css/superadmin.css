@@ -1,16 +1,215 @@
 :root {
-  --primary-color: #2a73d9;
-  --primary-color-strong: #1f66c8;
-  --primary-color-deep: #1856ac;
-  --primary-color-soft: #6ea4ee;
+  --primary-color: #d47b2c;
+  --primary-color-strong: #b85f2a;
+  --primary-color-deep: #8d3f28;
+  --primary-color-soft: #8a5fe0;
   --page-bg-start: #edf2f8;
   --page-bg-end: #e5ecf4;
-  --sidebar-text: #39485a;
-  --sidebar-text-muted: #697b90;
-  --sidebar-tab-text: #2f4053;
-  --secondary-color: #2c3e50;
+  --sidebar-text: #dbe5f3;
+  --sidebar-text-muted: #9fb0c7;
+  --sidebar-tab-text: #e5edf8;
+  --secondary-color: #e6edf8;
   --danger-color: #e74c3c;
   --success-color: #27ae60;
+}
+
+.metric-ring-card,
+.superadmin-chart-card,
+.sessions-card {
+  background: linear-gradient(165deg, rgba(55, 33, 26, 0.72), rgba(34, 18, 44, 0.62)) !important;
+  border: 1px solid rgba(214, 150, 111, 0.3) !important;
+  box-shadow: 0 16px 34px rgba(4, 10, 22, 0.5) !important;
+}
+
+.metric-ring-card h3,
+.superadmin-chart-card h3,
+.sessions-card h3,
+.chart-header h3 {
+  color: #ececec !important;
+  letter-spacing: 0.01em;
+}
+
+.metric-popover {
+  background: rgba(38, 20, 28, 0.94) !important;
+  border: 1px solid rgba(204, 138, 103, 0.3) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+.metric-popover p,
+.metric-popover li {
+  color: #d8d8d8 !important;
+}
+
+.metric-ring {
+  background: conic-gradient(#f0a14a var(--progress), rgba(143, 99, 232, 0.34) 0) !important;
+}
+
+.metric-ring-inner {
+  background: rgba(34, 18, 44, 0.88) !important;
+  border: 1px solid rgba(207, 141, 105, 0.3);
+}
+
+.metric-ring-inner strong {
+  color: #f0f0f0 !important;
+}
+
+.metric-ring-inner span {
+  color: #bdbdbd !important;
+}
+
+.sessions-value {
+  color: #f1f1f1 !important;
+}
+
+.sessions-bar-track {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
+.sessions-bar-fill {
+  background: linear-gradient(90deg, #f09f49, #8d62e5) !important;
+}
+
+.sessions-caption,
+.chart-header span,
+.bar-day-label,
+.security-list li {
+  color: #bfbfbf !important;
+}
+
+.security-list strong {
+  color: #f0f0f0 !important;
+}
+
+.chart-date-picker {
+  background: rgba(49, 27, 34, 0.82) !important;
+  border-color: rgba(208, 140, 104, 0.32) !important;
+  color: #e5e5e5 !important;
+}
+
+.bars-wrap {
+  background: linear-gradient(180deg, rgba(62, 35, 32, 0.8), rgba(37, 19, 47, 0.76)) !important;
+  border: 1px solid rgba(200, 136, 103, 0.26) !important;
+}
+
+.activity-curve-baseline {
+  stroke: rgba(245, 188, 131, 0.32) !important;
+}
+
+.activity-curve-line {
+  stroke: #d38dff !important;
+}
+
+.activity-curve-dot {
+  fill: #2a1637 !important;
+  stroke: #ffc086 !important;
+}
+
+.bar {
+  background: linear-gradient(180deg, #f0a14a 0%, #8d62e5 100%) !important;
+  border: 1px solid #a16adf !important;
+  border-bottom: none !important;
+}
+
+.clinica-actions .actual {
+  border-color: rgba(213, 145, 107, 0.46) !important;
+  background: rgba(80, 43, 46, 0.8) !important;
+  color: #ffd0a1 !important;
+  cursor: default;
+}
+
+:root {
+  --primary-color: #d47b2c;
+  --primary-color-strong: #b85f2a;
+  --primary-color-deep: #8d3f28;
+  --primary-color-soft: #8a5fe0;
+}
+
+.superadmin-page {
+  background:
+    linear-gradient(130deg, rgba(86, 45, 24, 0.22), rgba(51, 22, 76, 0.24)),
+    url('/galaxia.jpg') center / cover no-repeat fixed !important;
+}
+
+.superadmin-sidebar,
+.superadmin-content,
+.superadmin-card,
+.superadmin-chart-card,
+.sessions-card,
+.metric-ring-card,
+.clinicas-card,
+.superadmin-denied,
+.superadmin-loading,
+.clinica-modal,
+.detail-grid-item,
+.superadmin-user-footer {
+  background: rgba(28, 16, 24, 0.5) !important;
+  border-color: rgba(209, 142, 106, 0.3) !important;
+  color: #d6d6d6 !important;
+}
+
+.superadmin-topbar,
+.superadmin-heading-wrap {
+  background: linear-gradient(90deg, rgba(72, 38, 27, 0.72), rgba(53, 24, 75, 0.72)) !important;
+  border-color: rgba(208, 141, 105, 0.26) !important;
+}
+
+.superadmin-title,
+.superadmin-heading,
+.superadmin-kicker,
+.superadmin-description,
+.superadmin-nav-label,
+.superadmin-tab,
+.superadmin-link,
+.superadmin-user-footer strong,
+.detail-grid-item dt,
+.detail-grid-item dd,
+.clinica-modal h3,
+.clinica-form label,
+.clinicas-table thead th,
+.clinicas-table td,
+.clinicas-table th {
+  color: #dddddd !important;
+}
+
+.superadmin-tab:hover,
+.superadmin-tab.active,
+.superadmin-link:hover,
+.badge-open,
+.badge-role {
+  background: rgba(105, 53, 76, 0.44) !important;
+  border-color: rgba(214, 145, 107, 0.42) !important;
+  color: #e2e2e2 !important;
+}
+
+.clinicas-table th,
+.clinicas-table td {
+  border-bottom-color: rgba(205, 138, 103, 0.24) !important;
+}
+
+.clinica-row-disabled {
+  background: rgba(54, 30, 38, 0.64) !important;
+  color: #b8b8b8 !important;
+}
+
+.clinica-actions button,
+.clinica-btn-primary,
+.clinica-modal-actions button,
+.superadmin-mobile-menu-btn,
+.superadmin-search {
+  background: rgba(63, 34, 44, 0.62) !important;
+  border-color: rgba(203, 137, 103, 0.34) !important;
+  color: #e0e0e0 !important;
+}
+
+.superadmin-search::placeholder {
+  color: rgba(220, 220, 220, 0.72) !important;
+}
+
+.clinica-form input,
+.clinica-form select {
+  background: rgba(48, 26, 39, 0.66) !important;
+  border-color: rgba(198, 133, 101, 0.36) !important;
+  color: #e2e2e2 !important;
 }
 
 body.superadmin-mobile-lock {
@@ -23,7 +222,9 @@ body.superadmin-mobile-lock {
 
 .superadmin-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--page-bg-start), var(--page-bg-end));
+  background:
+    linear-gradient(145deg, rgba(5, 10, 20, 0.76), rgba(5, 10, 20, 0.86)),
+    url('/galaxia.jpg') center/cover no-repeat;
   color: var(--secondary-color);
   padding: 0;
   overflow-x: hidden;
@@ -125,14 +326,14 @@ body.superadmin-mobile-lock {
 }
 
 .superadmin-sidebar {
-  background: #f7f9fc;
+  background: rgba(8, 14, 26, 0.8);
   color: var(--sidebar-text);
   width: 248px;
   padding: 0.9rem 0.65rem;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  border-right: 1px solid #d8e2ef;
+  border-right: 1px solid rgba(170, 192, 219, 0.28);
   transition: width 0.42s cubic-bezier(0.22, 1, 0.36, 1), padding 0.42s cubic-bezier(0.22, 1, 0.36, 1);
   overflow: hidden;
 }
@@ -150,7 +351,7 @@ body.superadmin-mobile-lock {
   justify-content: center;
   gap: 0.8rem;
   padding: 0.4rem 0 1.1rem;
-  border-bottom: 1px solid #dde6f0;
+  border-bottom: 1px solid rgba(170, 192, 219, 0.25);
   min-height: 148px;
 }
 
@@ -183,7 +384,7 @@ body.superadmin-mobile-lock {
 .superadmin-title {
   font-size: 1rem;
   font-weight: 700;
-  color: #243548;
+  color: #eef4fd;
   width: 100%;
   text-align: center;
   letter-spacing: 0.02em;
@@ -204,7 +405,7 @@ body.superadmin-mobile-lock {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #8295ab;
+  color: #a5b7cc;
   opacity: 1;
   visibility: visible;
   transition: opacity 0.24s ease, transform 0.24s ease, visibility 0s linear 0s;
@@ -259,15 +460,15 @@ body.superadmin-mobile-lock {
 }
 
 .superadmin-tab:hover {
-  border-color: #c8d8ea;
-  background: #eef4fc;
-  color: #23374d;
+  border-color: rgba(157, 187, 221, 0.45);
+  background: rgba(83, 122, 168, 0.2);
+  color: #eef4fd;
 }
 
 .superadmin-tab.active {
-  border-color: #c7dcf8;
-  background: linear-gradient(90deg, #f0f6ff, #e8f2ff);
-  color: var(--primary-color-strong);
+  border-color: rgba(157, 187, 221, 0.5);
+  background: linear-gradient(90deg, rgba(58, 87, 120, 0.45), rgba(48, 74, 105, 0.45));
+  color: #f2f7ff;
 }
 
 .superadmin-tab.active .superadmin-tab-dot {
@@ -277,7 +478,7 @@ body.superadmin-mobile-lock {
 .superadmin-sidebar-footer {
   width: 100%;
   margin-top: auto;
-  border-top: 1px solid #dde6f0;
+  border-top: 1px solid rgba(170, 192, 219, 0.25);
   padding-top: 1rem;
 }
 
@@ -285,7 +486,7 @@ body.superadmin-mobile-lock {
   min-height: 42px;
   width: 100%;
   border-radius: 10px;
-  border: 1px solid #d0dbe9;
+  border: 1px solid rgba(170, 192, 219, 0.32);
   background: transparent;
   display: inline-flex;
   align-items: center;
@@ -301,9 +502,9 @@ body.superadmin-mobile-lock {
 }
 
 .superadmin-link:hover {
-  border-color: #c1d2e6;
-  background: #eef4fb;
-  color: #223447;
+  border-color: rgba(170, 192, 219, 0.52);
+  background: rgba(77, 114, 158, 0.2);
+  color: #f3f8ff;
 }
 
 .superadmin-link.logout {
@@ -324,10 +525,10 @@ body.superadmin-mobile-lock {
 
 .superadmin-user-footer {
   margin-top: 0.8rem;
-  border: 1px solid #d6e1ee;
+  border: 1px solid rgba(170, 192, 219, 0.3);
   border-radius: 10px;
   padding: 0.7rem;
-  background: #edf3fa;
+  background: rgba(31, 49, 74, 0.48);
   font-size: 0.84rem;
   color: var(--sidebar-text);
   display: grid;
@@ -341,11 +542,11 @@ body.superadmin-mobile-lock {
 }
 
 .superadmin-user-footer strong {
-  color: #24384d;
+  color: #f2f7ff;
 }
 
 .superadmin-content {
-  background: #f3f7fc;
+  background: rgba(7, 13, 24, 0.62);
   padding: 0;
   overflow: hidden;
   min-height: 100vh;
