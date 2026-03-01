@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -87,7 +88,7 @@ export default async function EmpresaTipoPage({ params }: PageProps) {
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <section className="mx-auto flex min-h-screen w-full max-w-4xl flex-col items-center justify-center px-4 py-10 text-center sm:px-6 sm:py-12">
         <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/95 p-3">
-          <img src="/logo.png" alt="Logo StarMOT" className="h-full w-full rounded-full object-cover" />
+          <Image src="/logo.png" alt="Logo StarMOT" width={80} height={80} className="h-full w-full rounded-full object-cover" />
         </div>
         <p className="mb-3 inline-flex items-center rounded-full border border-slate-700 px-4 py-1 text-sm text-slate-300">
           StarMOT · Portal Empresa · {tipoNegocioLabel}

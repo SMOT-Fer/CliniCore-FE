@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { useThemeMode, type ThemeMode } from '../hooks/use-theme-mode';
 import '../css/login.css';
 
 const API_BASE = '/api/backend';
@@ -19,6 +21,7 @@ export default function LoginPage() {
   const [messageType, setMessageType] = useState<'error' | 'success'>('error');
   const [isLoading, setIsLoading] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const { themeMode, setThemeMode } = useThemeMode();
 
   // Validar sesión activa al cargar
   useEffect(() => {
@@ -136,6 +139,18 @@ export default function LoginPage() {
           ← Volver al inicio
         </Link>
 
+        <label className="login-theme-switch" aria-label="Seleccionar tema">
+          <span>Tema</span>
+          <select
+            value={themeMode}
+            onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+          >
+            <option value="system">Sistema</option>
+            <option value="light">Claro</option>
+            <option value="dark">Oscuro</option>
+          </select>
+        </label>
+
         <section className="login-shell">
           <aside className="login-hero" aria-hidden="true">
             <div className="login-hero-content">
@@ -149,7 +164,7 @@ export default function LoginPage() {
           <article className="login-card">
             <div className="brand">
               <div className="login-brand-logo">
-                <img src="/logo.png" alt="Logo StarMOT" />
+                <Image src="/logo.png" alt="Logo StarMOT" width={92} height={92} />
               </div>
               <p className="brand-kicker">StarMOT</p>
               <h2>Iniciar sesión</h2>

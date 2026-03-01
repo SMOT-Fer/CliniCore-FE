@@ -4,7 +4,9 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { useThemeMode, type ThemeMode } from '../hooks/use-theme-mode';
 import '../css/superadmin.css';
 
 const API_BASE = '/api/backend';
@@ -334,6 +336,8 @@ export default function SuperadminPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const mobileSidebarRef = useRef<HTMLElement | null>(null);
+  const contentScrollRef = useRef<HTMLElement | null>(null);
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
   const [rowDetailClosing, setRowDetailClosing] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
@@ -341,6 +345,7 @@ export default function SuperadminPage() {
   const [isSessionRevokedModalOpen, setIsSessionRevokedModalOpen] = useState(false);
   const [selectedEndDate, setSelectedEndDate] = useState(getTodayLocalIso());
   const [searchQuery, setSearchQuery] = useState('');
+  const { themeMode, setThemeMode } = useThemeMode();
   const [openListCard, setOpenListCard] = useState<'clinicas' | 'usuarios' | null>(null);
   const [clinicas, setClinicas] = useState<Clinica[]>([]);
   const [clinicasLoading, setClinicasLoading] = useState(false);
@@ -1981,12 +1986,25 @@ export default function SuperadminPage() {
     });
   }, [sesiones, searchQuery, searchHasEdgeSpaces]);
 
+  const resetScrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+
+    if (contentScrollRef.current) {
+      contentScrollRef.current.scrollTo({ top: 0, behavior: 'auto' });
+    }
+
+    if (mobileSidebarRef.current) {
+      mobileSidebarRef.current.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, []);
+
   const handleTabChange = useCallback((nextTab: SuperadminTab) => {
     if (nextTab === activeTab || tabTransitionState === 'exiting') return;
+    resetScrollToTop();
     setActiveTab(nextTab);
     setTabTransitionState('exiting');
     setIsMobileSidebarOpen(false);
-  }, [activeTab, tabTransitionState]);
+  }, [activeTab, tabTransitionState, resetScrollToTop]);
 
   useEffect(() => {
     if (tabTransitionState !== 'exiting') return;
@@ -2010,8 +2028,8 @@ export default function SuperadminPage() {
   }, [tabTransitionState]);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'auto' });
-  }, [renderTab]);
+    resetScrollToTop();
+  }, [renderTab, resetScrollToTop]);
 
   useEffect(() => {
     return () => {
@@ -2063,6 +2081,14 @@ export default function SuperadminPage() {
     }
 
     document.body.style.overflow = '';
+  }, [isMobileSidebarOpen, isMobileViewport]);
+
+  useEffect(() => {
+    if (!isMobileViewport) return;
+
+    if (mobileSidebarRef.current) {
+      mobileSidebarRef.current.scrollTo({ top: 0, behavior: 'auto' });
+    }
   }, [isMobileSidebarOpen, isMobileViewport]);
 
   useEffect(() => {
@@ -2196,13 +2222,14 @@ export default function SuperadminPage() {
       />
       <section className={`superadmin-layout ${isSidebarCompact ? 'sidebar-collapsed' : ''} ${isMobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
         <aside
+          ref={mobileSidebarRef}
           className={`superadmin-sidebar ${isSidebarCompact ? 'collapsed' : ''} ${sidebarState === 'collapsing' ? 'is-collapsing' : ''} ${sidebarState === 'opening' ? 'is-opening' : ''}`}
           onMouseEnter={isMobileViewport ? undefined : handleSidebarMouseEnter}
           onMouseLeave={isMobileViewport ? undefined : handleSidebarMouseLeave}
         >
           <div className="superadmin-brand">
             <div className="superadmin-brand-logo">
-              <img src="/logo.png" alt="Logo StarMOT" className="superadmin-brand-logo-img" />
+              <Image src="/logo.png" alt="Logo StarMOT" width={64} height={64} className="superadmin-brand-logo-img" />
             </div>
             <h1 className="superadmin-title">StarMOT</h1>
           </div>
@@ -2248,7 +2275,7 @@ export default function SuperadminPage() {
           onClick={() => setIsMobileSidebarOpen(false)}
         />
 
-        <section className="superadmin-content">
+        <section ref={contentScrollRef} className="superadmin-content">
           <header className="superadmin-topbar">
             <button
               type="button"
@@ -2270,6 +2297,16 @@ export default function SuperadminPage() {
             <div className="superadmin-topbar-meta" aria-label="Estado de sesión">
               <span className="badge-open">Activo</span>
               <span className="badge-role">Rol: {usuario?.rol || 'SUPERADMIN'}</span>
+              <label className="superadmin-theme-switch" aria-label="Seleccionar tema">
+                <select
+                  value={themeMode}
+                  onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+                >
+                  <option value="system">Sistema</option>
+                  <option value="light">Claro</option>
+                  <option value="dark">Oscuro</option>
+                </select>
+              </label>
             </div>
           </header>
 
@@ -2281,6 +2318,16 @@ export default function SuperadminPage() {
             <div className="superadmin-badges">
               <span className="badge-open">Activo</span>
               <span className="badge-role">{usuario?.rol || 'SUPERADMIN'}</span>
+              <label className="superadmin-theme-switch" aria-label="Seleccionar tema">
+                <select
+                  value={themeMode}
+                  onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+                >
+                  <option value="system">Sistema</option>
+                  <option value="light">Claro</option>
+                  <option value="dark">Oscuro</option>
+                </select>
+              </label>
             </div>
           </div>
 
