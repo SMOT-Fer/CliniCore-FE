@@ -251,7 +251,7 @@ html.theme-switching .login-page::after {
 }
 
 .brand-kicker {
-    color: var(--login-primary-color);
+    color: #f4f7fb;
     font-size: 0.77rem;
     text-transform: uppercase;
     letter-spacing: 0.12em;
@@ -393,18 +393,69 @@ html[data-theme='light'] .login-page {
 }
 
 html[data-theme='light'] .login-card {
-    border-right-color: rgba(126, 168, 216, 0.72);
-    background: rgba(244, 251, 255, 0.42);
+    border-right-color: rgba(126, 168, 216, 0.58);
+    background: rgba(25, 28, 44, 0.5);
+    color: #f4f7fb;
 }
 
 html[data-theme='light'] .brand-kicker {
-    color: var(--login-primary-color);
+    color: #f4f7fb;
 }
 
 html[data-theme='light'] .login-hero {
     background:
-        linear-gradient(140deg, rgba(58, 114, 185, 0.2), rgba(41, 95, 166, 0.14)),
+        linear-gradient(140deg, rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.2)),
         url('/galaxia-claro.jpg') center/cover no-repeat;
+}
+
+html[data-theme='light'] .login-hero h1,
+html[data-theme='light'] .login-hero p {
+    color: #ffffff !important;
+}
+
+html[data-theme='light'] .login-return-btn,
+html[data-theme='light'] .login-theme-switch {
+    border-color: rgba(126, 168, 216, 0.5);
+    background: rgba(24, 35, 58, 0.86);
+    color: #f4f7fb;
+}
+
+html[data-theme='light'] .login-return-btn:hover {
+    background: rgba(31, 44, 71, 0.95);
+    border-color: rgba(126, 168, 216, 0.68);
+}
+
+html[data-theme='light'] .login-theme-switch select {
+    border-color: rgba(126, 168, 216, 0.56);
+    background: rgba(16, 26, 46, 0.92);
+    color: #f4f7fb;
+}
+
+html[data-theme='light'] .login-brand-logo {
+    border-color: rgba(126, 168, 216, 0.62);
+    background: rgba(22, 31, 52, 0.88);
+}
+
+html[data-theme='light'] .brand h2,
+html[data-theme='light'] .form-group label,
+html[data-theme='light'] .remember-me,
+html[data-theme='light'] .row-help,
+html[data-theme='light'] .form-group input {
+    color: #f4f7fb;
+}
+
+html[data-theme='light'] .form-group input {
+    border-color: rgba(126, 168, 216, 0.44);
+    background: rgba(17, 28, 50, 0.76);
+}
+
+html[data-theme='light'] .form-group input::placeholder {
+    color: rgba(214, 226, 244, 0.74);
+}
+
+html[data-theme='light'] .form-group input:focus {
+    border-color: rgba(126, 168, 216, 0.74);
+    background: rgba(22, 34, 58, 0.86);
 }
 
 html[data-theme='dark'] .login-page {
@@ -412,8 +463,8 @@ html[data-theme='dark'] .login-page {
     --login-primary-color-strong: #b86a31;
     --login-danger-color: #f06f60;
     --login-success-color: #46c279;
-    --login-text-light: #f4e4d7;
-    --login-text-soft: rgba(244, 228, 215, 0.84);
+    --login-text-light: #f4f7fb;
+    --login-text-soft: rgba(240, 246, 255, 0.84);
     background: transparent;
 }
 
@@ -426,7 +477,7 @@ html[data-theme='dark'] .login-hero {
 html[data-theme='dark'] .login-card {
     border-right-color: rgba(210, 145, 108, 0.5);
     background: rgba(34, 20, 30, 0.48);
-    color: #ead5c2;
+    color: #f4f7fb;
 }
 
 @media (max-width: 1024px) {
@@ -439,7 +490,7 @@ html[data-theme='dark'] .login-return-btn,
 html[data-theme='dark'] .login-theme-switch {
     border-color: rgba(214, 145, 107, 0.36);
     background: rgba(45, 25, 35, 0.84);
-    color: #f0c69f;
+    color: #f4f7fb;
 }
 
 html[data-theme='dark'] .login-return-btn:hover {
@@ -450,7 +501,7 @@ html[data-theme='dark'] .login-return-btn:hover {
 html[data-theme='dark'] .login-theme-switch select {
     border-color: rgba(214, 145, 107, 0.45);
     background: rgba(34, 18, 44, 0.9);
-    color: #ffd4a8;
+    color: #f4f7fb;
 }
 
 html[data-theme='dark'] .login-brand-logo {
@@ -459,27 +510,27 @@ html[data-theme='dark'] .login-brand-logo {
 }
 
 html[data-theme='dark'] .brand-kicker {
-    color: var(--login-primary-color);
+    color: #f4f7fb;
 }
 
 html[data-theme='dark'] .brand h2 {
-    color: #f5dbc1;
+    color: #f4f7fb;
 }
 
 html[data-theme='dark'] .form-group label,
 html[data-theme='dark'] .remember-me,
 html[data-theme='dark'] .row-help {
-    color: #d7b799;
+    color: #f4f7fb;
 }
 
 html[data-theme='dark'] .form-group input {
     border-color: rgba(208, 141, 105, 0.34);
-    color: #f3d9c0;
+    color: #f4f7fb;
     background: rgba(39, 22, 33, 0.72);
 }
 
 html[data-theme='dark'] .form-group input::placeholder {
-    color: rgba(229, 191, 159, 0.68);
+    color: rgba(240, 246, 255, 0.68);
 }
 
 html[data-theme='dark'] .form-group input:focus {
@@ -621,8 +672,8 @@ html[data-theme='light'] .login-page {
     }
 
     html[data-theme='light'] .login-card {
-        border-color: rgba(137, 175, 219, 0.66);
-        background: rgba(244, 251, 255, 0.42);
+        border-color: rgba(126, 168, 216, 0.58);
+        background: rgba(25, 28, 44, 0.5);
     }
 
     html[data-theme='dark'] .login-card {

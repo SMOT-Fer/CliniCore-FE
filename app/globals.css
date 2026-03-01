@@ -24,3 +24,17 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+html,
+body,
+body * {
+  color: #fff !important;
+}
+
+input::placeholder,
+textarea::placeholder,
+select,
+select option,
+select optgroup {
+  color: #fff !important;
+}

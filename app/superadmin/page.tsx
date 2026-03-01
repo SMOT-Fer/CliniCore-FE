@@ -285,7 +285,7 @@ function Pagination({
             padding: '8px 12px',
             margin: '0 4px',
             backgroundColor: currentPage === pageNum ? 'var(--primary-color)' : '#f0f0f0',
-            color: currentPage === pageNum ? '#fff' : '#333',
+            color: '#fff',
             border: 'none',
             borderRadius: '4px',
             cursor: 'pointer',
@@ -3328,7 +3328,7 @@ export default function SuperadminPage() {
             margin: 0,
             fontSize: '14px',
             fontWeight: 'bold',
-            color: '#000000',
+            color: '#ffffff',
             display: 'flex',
             alignItems: 'center',
             gap: '8px'

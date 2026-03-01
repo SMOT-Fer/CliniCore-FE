@@ -23,6 +23,16 @@ export default function LoginPage() {
   const [isExiting, setIsExiting] = useState(false);
   const { themeMode, setThemeMode } = useThemeMode();
 
+  const handleGoHome = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    if (isExiting) return;
+    setIsExiting(true);
+
+    window.setTimeout(() => {
+      router.push('/');
+    }, 420);
+  };
+
   // Validar sesión activa al cargar
   useEffect(() => {
     const checkSession = async () => {
@@ -135,7 +145,7 @@ export default function LoginPage() {
     <>
       <div className={`page-transition ${isExiting ? 'visible' : ''}`} aria-hidden="true" />
       <main className={`login-page ${isExiting ? 'is-exiting' : 'page-enter'}`}>
-        <Link href="/" className="login-return-btn" aria-label="Volver al inicio">
+        <Link href="/" className="login-return-btn" aria-label="Volver al inicio" onClick={handleGoHome}>
           ← Volver al inicio
         </Link>
 

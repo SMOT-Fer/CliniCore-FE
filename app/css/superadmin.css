@@ -13,6 +13,48 @@
   --success-color: #27ae60;
 }
 
+.superadmin-page,
+.superadmin-page * {
+  color: #fff !important;
+}
+
+.superadmin-page input,
+.superadmin-page select,
+.superadmin-page textarea,
+.superadmin-page button,
+.superadmin-page .clinicas-table th,
+.superadmin-page .clinicas-table td,
+.superadmin-page .detail-grid-item dt,
+.superadmin-page .detail-grid-item dd,
+.superadmin-page .sessions-caption,
+.superadmin-page .chart-header span,
+.superadmin-page .bar-day-label,
+.superadmin-page .security-list li,
+.superadmin-page .security-list strong,
+.superadmin-page .metric-ring-inner span,
+.superadmin-page .metric-ring-inner strong,
+.superadmin-page .session-current-badge {
+  color: #fff !important;
+}
+
+.superadmin-page input::placeholder,
+.superadmin-page .superadmin-search::placeholder,
+.superadmin-page textarea::placeholder {
+  color: #fff !important;
+  opacity: 1;
+}
+
+.superadmin-page select option,
+.superadmin-page select optgroup {
+  background: #1b2a44 !important;
+  color: #fff !important;
+}
+
+html[data-theme='light'] .superadmin-page,
+html[data-theme='light'] .superadmin-page * {
+  color: #fff !important;
+}
+
 .metric-ring-card,
 .superadmin-chart-card,
 .sessions-card {
@@ -268,12 +310,12 @@
 }
 
 .superadmin-page::before {
-  background-image: url('/galaxia.jpg');
+  background-image: linear-gradient(140deg, rgba(0, 0, 0, 0.24), rgba(0, 0, 0, 0.18)), url('/galaxia.jpg');
   opacity: 1;
 }
 
 .superadmin-page::after {
-  background-image: url('/galaxia-claro.jpg');
+  background-image: linear-gradient(140deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.16)), url('/galaxia-claro.jpg');
   opacity: 0;
 }
 
@@ -1795,7 +1837,7 @@ html[data-theme='light'] .superadmin-page {
 }
 
 html[data-theme='light'] .superadmin-transition-layer {
-  background: linear-gradient(145deg, rgba(228, 241, 255, 0.92), rgba(215, 233, 253, 0.95));
+  background: linear-gradient(145deg, rgba(0, 0, 0, 0.95), rgba(14, 14, 14, 0.98));
 }
 
 html[data-theme='light'] .superadmin-sidebar,
@@ -1999,6 +2041,188 @@ html[data-theme='light'] .superadmin-mobile-menu-btn {
   border: 1px solid rgba(138, 175, 218, 0.76);
   background: rgba(233, 244, 255, 0.92);
   color: #1f3d62;
+}
+
+html[data-theme='light'] .superadmin-page,
+html[data-theme='light'] .superadmin-page * {
+  color: #f4f7fb !important;
+}
+
+html[data-theme='light'] .superadmin-sidebar,
+html[data-theme='light'] .superadmin-content,
+html[data-theme='light'] .superadmin-card,
+html[data-theme='light'] .superadmin-chart-card,
+html[data-theme='light'] .sessions-card,
+html[data-theme='light'] .metric-ring-card,
+html[data-theme='light'] .clinicas-card,
+html[data-theme='light'] .superadmin-denied,
+html[data-theme='light'] .superadmin-loading,
+html[data-theme='light'] .clinica-modal,
+html[data-theme='light'] .detail-grid-item,
+html[data-theme='light'] .superadmin-user-footer,
+html[data-theme='light'] .bars-wrap,
+html[data-theme='light'] .metric-ring-inner {
+  background: rgba(25, 28, 44, 0.5) !important;
+  border-color: rgba(126, 168, 216, 0.58) !important;
+  color: #f4f7fb !important;
+}
+
+html[data-theme='light'] .superadmin-topbar,
+html[data-theme='light'] .superadmin-heading-wrap {
+  background: linear-gradient(90deg, rgba(24, 35, 58, 0.78), rgba(29, 44, 74, 0.76)) !important;
+  border-color: rgba(126, 168, 216, 0.56) !important;
+}
+
+html[data-theme='light'] .superadmin-brand {
+  border-bottom-color: rgba(126, 168, 216, 0.52) !important;
+}
+
+html[data-theme='light'] .superadmin-brand-logo {
+  border: 2px solid rgba(126, 168, 216, 0.74) !important;
+  background: linear-gradient(145deg, rgba(20, 33, 56, 0.92), rgba(24, 40, 66, 0.92)) !important;
+  box-shadow: inset 0 0 0 3px rgba(126, 168, 216, 0.24) !important;
+}
+
+html[data-theme='light'] .superadmin-tab:hover,
+html[data-theme='light'] .superadmin-tab.active,
+html[data-theme='light'] .superadmin-link:hover,
+html[data-theme='light'] .badge-open,
+html[data-theme='light'] .badge-role {
+  background: rgba(40, 64, 105, 0.5) !important;
+  border-color: rgba(126, 168, 216, 0.62) !important;
+  color: #f4f7fb !important;
+}
+
+html[data-theme='light'] .superadmin-link.logout {
+  color: #f4f7fb !important;
+}
+
+html[data-theme='light'] .superadmin-search,
+html[data-theme='light'] .clinica-actions button,
+html[data-theme='light'] .clinica-btn-primary,
+html[data-theme='light'] .clinica-modal-actions button,
+html[data-theme='light'] .chart-date-picker,
+html[data-theme='light'] .clinica-form input,
+html[data-theme='light'] .clinica-form select {
+  background: rgba(18, 30, 52, 0.82) !important;
+  border-color: rgba(126, 168, 216, 0.62) !important;
+  color: #f4f7fb !important;
+}
+
+html[data-theme='light'] .clinica-form select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, #8fb8ef 50%),
+    linear-gradient(135deg, #8fb8ef 50%, transparent 50%),
+    linear-gradient(0deg, rgba(126, 168, 216, 0.58), rgba(126, 168, 216, 0.58)) !important;
+}
+
+html[data-theme='light'] .clinica-form select option,
+html[data-theme='light'] .clinica-form select optgroup {
+  background: #1b2a44;
+  color: #f4f7fb;
+}
+
+html[data-theme='light'] .superadmin-search::placeholder {
+  color: rgba(214, 226, 244, 0.74) !important;
+}
+
+html[data-theme='light'] .metric-popover {
+  background: rgba(18, 30, 52, 0.96) !important;
+  border-color: rgba(126, 168, 216, 0.64) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+html[data-theme='light'] .metric-popover p,
+html[data-theme='light'] .metric-popover li,
+html[data-theme='light'] .sessions-caption,
+html[data-theme='light'] .chart-header span,
+html[data-theme='light'] .bar-day-label,
+html[data-theme='light'] .security-list li,
+html[data-theme='light'] .metric-ring-inner span {
+  color: rgba(240, 246, 255, 0.82) !important;
+}
+
+html[data-theme='light'] .metric-ring {
+  background: conic-gradient(#5d97e3 var(--progress), rgba(136, 180, 235, 0.34) 0) !important;
+}
+
+html[data-theme='light'] .sessions-bar-track {
+  background: rgba(156, 192, 233, 0.26) !important;
+}
+
+html[data-theme='light'] .sessions-bar-fill {
+  background: linear-gradient(90deg, #6aa4ed, #2f6fcb) !important;
+}
+
+html[data-theme='light'] .bars-wrap {
+  background: linear-gradient(180deg, rgba(25, 28, 44, 0.56), rgba(18, 30, 52, 0.54)) !important;
+}
+
+html[data-theme='light'] .activity-curve-baseline {
+  stroke: rgba(126, 168, 216, 0.3) !important;
+}
+
+html[data-theme='light'] .activity-curve-line {
+  stroke: #6aa4ed !important;
+}
+
+html[data-theme='light'] .activity-curve-dot {
+  fill: #1b2a44 !important;
+  stroke: #8fb8ef !important;
+}
+
+html[data-theme='light'] .bar {
+  background: linear-gradient(180deg, #7aaef2 0%, #2f6fcb 100%) !important;
+  border-color: #5a93de !important;
+}
+
+html[data-theme='light'] .clinica-actions .actual {
+  border-color: rgba(126, 168, 216, 0.6) !important;
+  background: rgba(40, 64, 105, 0.62) !important;
+  color: #f4f7fb !important;
+}
+
+html[data-theme='light'] .clinica-row-disabled {
+  background: rgba(24, 38, 62, 0.68) !important;
+  color: rgba(240, 246, 255, 0.78) !important;
+}
+
+html[data-theme='light'] .superadmin-theme-switch select,
+html[data-theme='light'] .superadmin-mobile-menu-btn {
+  border-color: rgba(126, 168, 216, 0.72) !important;
+  background: rgba(24, 35, 58, 0.9) !important;
+  color: #f4f7fb !important;
+}
+
+html[data-theme='light'] .superadmin-mobile-backdrop {
+  background: rgba(10, 18, 32, 0.46) !important;
+}
+
+html[data-theme='light'] .superadmin-page :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  span,
+  small,
+  strong,
+  label,
+  li,
+  dt,
+  dd,
+  th,
+  td,
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  option
+) {
+  color: #ffffff !important;
 }
 
 @media (max-width: 1024px) {
@@ -2617,5 +2841,105 @@ html[data-theme='light'] .superadmin-mobile-menu-btn {
     font-size: 0.8rem;
     padding: 0.5rem 0.55rem;
   }
+}
+
+/* Final contrast lock: keep all superadmin data text readable over background */
+.superadmin-page,
+.superadmin-page * {
+  color: #ffffff !important;
+}
+
+.superadmin-page .clinicas-table thead th,
+.superadmin-page .clinicas-table tbody td,
+.superadmin-page .clinicas-table td,
+.superadmin-page .clinicas-table th,
+.superadmin-page .session-current-badge,
+.superadmin-page .sessions-caption,
+.superadmin-page .chart-header span,
+.superadmin-page .bar-day-label,
+.superadmin-page .security-list li,
+.superadmin-page .security-list strong,
+.superadmin-page .detail-grid-item dt,
+.superadmin-page .detail-grid-item dd,
+.superadmin-page .clinica-modal h3,
+.superadmin-page .clinica-form label,
+.superadmin-page .superadmin-search,
+.superadmin-page .superadmin-search::placeholder,
+.superadmin-page .clinica-form input,
+.superadmin-page .clinica-form input::placeholder,
+.superadmin-page .clinica-form select,
+.superadmin-page .metric-popover,
+.superadmin-page .metric-popover p,
+.superadmin-page .metric-popover li {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+.superadmin-page select option,
+.superadmin-page select optgroup {
+  color: #ffffff !important;
+}
+
+html[data-theme='light'] :is(
+  .superadmin-page,
+  .clinica-modal,
+  .clinica-modal-detail,
+  .superadmin-revoked-modal,
+  .clinica-modal-backdrop
+) :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  span,
+  small,
+  strong,
+  label,
+  li,
+  dt,
+  dd,
+  th,
+  td,
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  option,
+  optgroup
+) {
+  color: #ffffff !important;
+}
+
+html[data-theme='light'] :is(
+  .superadmin-page,
+  .clinica-modal,
+  .clinica-modal-detail,
+  .superadmin-revoked-modal
+) .clinicas-table thead,
+html[data-theme='light'] :is(
+  .superadmin-page,
+  .clinica-modal,
+  .clinica-modal-detail,
+  .superadmin-revoked-modal
+) .clinicas-table thead tr,
+html[data-theme='light'] :is(
+  .superadmin-page,
+  .clinica-modal,
+  .clinica-modal-detail,
+  .superadmin-revoked-modal
+) .clinicas-table thead th,
+html[data-theme='light'] :is(
+  .superadmin-page,
+  .clinica-modal,
+  .clinica-modal-detail,
+  .superadmin-revoked-modal
+) .clinicas-table thead th * {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
 }
 
