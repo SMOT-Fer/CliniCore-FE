@@ -27,8 +27,9 @@ export default function LoginPage() {
         const response = await fetch(API_ME, { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
-          if (data.data?.rol === 'SUPERADMIN') {
-            router.push('/superadmin');
+          const redirectPath = data.data?.redirect_path;
+          if (redirectPath) {
+            router.push(redirectPath);
             return;
           }
           setMessage('Tu rol aun no tiene interfaz asignada.');
@@ -46,8 +47,9 @@ export default function LoginPage() {
             const meResponse = await fetch(API_ME, { credentials: 'include' });
             if (meResponse.ok) {
               const data = await meResponse.json();
-              if (data.data?.rol === 'SUPERADMIN') {
-                router.push('/superadmin');
+              const redirectPath = data.data?.redirect_path;
+              if (redirectPath) {
+                router.push(redirectPath);
                 return;
               }
             }
@@ -111,8 +113,8 @@ export default function LoginPage() {
       // Transición
       setIsExiting(true);
       setTimeout(() => {
-        if (data.data?.rol === 'SUPERADMIN') {
-          router.push('/superadmin');
+        if (data.data?.redirect_path) {
+          router.push(data.data.redirect_path);
         } else {
           setMessage('Tu rol aun no tiene interfaz asignada.');
           setMessageType('error');
@@ -137,9 +139,9 @@ export default function LoginPage() {
         <section className="login-shell">
           <aside className="login-hero" aria-hidden="true">
             <div className="login-hero-content">
-              <h1>Welcome Back</h1>
+              <h1>Impulsa tu operación digital</h1>
               <p>
-                StarMOT: plataforma segura para administrar usuarios, sesiones y operación en tiempo real.
+                StarMOT unifica desarrollo, control y administración en una sola plataforma para equipos que construyen software con visión y precisión.
               </p>
             </div>
           </aside>
@@ -147,20 +149,20 @@ export default function LoginPage() {
           <article className="login-card">
             <div className="brand">
               <div className="login-brand-logo">
-                <img src="/logo.png" alt="Logo SMOT" />
+                <img src="/logo.png" alt="Logo StarMOT" />
               </div>
-              <p className="brand-kicker">SMOT</p>
-              <h2>Sign in</h2>
+              <p className="brand-kicker">StarMOT</p>
+              <h2>Iniciar sesión</h2>
             </div>
 
             <form onSubmit={handleSubmit} className="login-form" noValidate>
               <div className="form-group">
-                <label htmlFor="email">Correo corporativo</label>
+                <label htmlFor="email">Correo</label>
                 <input
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="correo@clinica.com"
+                  placeholder="correo@empresa.com"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -169,12 +171,12 @@ export default function LoginPage() {
               </div>
 
               <div className="form-group">
-                <label htmlFor="password">Password</label>
+                <label htmlFor="password">Contraseña</label>
                 <input
                   id="password"
                   name="password"
                   type="password"
-                  placeholder="Enter Password"
+                  placeholder="Ingresa tu contraseña"
                   required
                   minLength={6}
                   value={password}
@@ -192,7 +194,7 @@ export default function LoginPage() {
               </div>
 
               <button type="submit" className="btn-login" disabled={isLoading}>
-                {isLoading ? 'Iniciando sesión...' : 'Sign in now'}
+                {isLoading ? 'Iniciando sesión...' : 'Iniciar sesión'}
               </button>
 
               {message && (
@@ -201,10 +203,6 @@ export default function LoginPage() {
                 </p>
               )}
             </form>
-
-            <div className="login-footer-text">
-              <p>By clicking on “Sign in now” you agree to our Terms of Service and Privacy Policy.</p>
-            </div>
           </article>
         </section>
       </main>

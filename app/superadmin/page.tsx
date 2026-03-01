@@ -1,7 +1,8 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import '../css/superadmin.css';
@@ -11,8 +12,9 @@ const API_ME = `${API_BASE}/usuarios/me`;
 const API_REFRESH = `${API_BASE}/usuarios/refresh`;
 const API_CSRF = `${API_BASE}/usuarios/csrf`;
 const API_LOGOUT = `${API_BASE}/usuarios/logout`;
-const API_CLINICAS = `${API_BASE}/clinicas`;
-const API_CLINICAS_ACTIVAS = `${API_BASE}/clinicas/public/activas`;
+const API_CLINICAS = `${API_BASE}/empresas`;
+const API_CLINICAS_ACTIVAS = `${API_BASE}/empresas/public/activas`;
+const API_TIPOS_NEGOCIO = `${API_BASE}/tipos-negocio`;
 const API_USUARIOS = `${API_BASE}/usuarios`;
 const API_PERSONAS = `${API_BASE}/personas`;
 const API_SESIONES = `${API_BASE}/admin/sesiones`;
@@ -31,12 +33,13 @@ type UsuarioSesion = {
   clinica_id?: string | null;
 };
 
-const TABS = ['Dashboard', 'Clinicas', 'Usuarios', 'Personas', 'Sesiones'] as const;
+const TABS = ['Dashboard', 'Clinicas', 'TiposNegocio', 'Usuarios', 'Personas', 'Sesiones'] as const;
 type SuperadminTab = (typeof TABS)[number];
 
 const TAB_META: Record<SuperadminTab, { icon: string; label: string }> = {
   Dashboard: { icon: '📊', label: 'Dashboard' },
-  Clinicas: { icon: '🏥', label: 'Clinicas' },
+  Clinicas: { icon: '🏢', label: 'Empresas' },
+  TiposNegocio: { icon: '🏷️', label: 'Tipos de negocio' },
   Usuarios: { icon: '👤', label: 'Usuarios' },
   Personas: { icon: '🧾', label: 'Personas' },
   Sesiones: { icon: '🔐', label: 'Sesiones' }
@@ -59,6 +62,7 @@ type DashboardStats = {
 type Clinica = {
   id: string;
   nombre: string;
+  tipo_negocio_id?: string | null;
   ruc?: string | null;
   estado: 'ACTIVA' | 'INACTIVA';
   direccion?: string | null;
@@ -71,10 +75,22 @@ type Clinica = {
 
 type ClinicaForm = {
   nombre: string;
+  tipo_negocio_id: string;
   ruc: string;
   direccion: string;
   telefono: string;
   estado: 'ACTIVA' | 'INACTIVA';
+};
+
+type TipoNegocio = {
+  id: string;
+  codigo: string;
+  nombre: string;
+};
+
+type TipoNegocioForm = {
+  codigo: string;
+  nombre: string;
 };
 
 type UsuarioAdmin = {
@@ -282,6 +298,12 @@ function Pagination({
   );
 }
 
+function ModalPortal({ children }: { children: ReactNode }) {
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(children, document.body);
+}
+
 export default function SuperadminPage() {
   const MODAL_EXIT_DURATION_MS = 180;
   const PAGE_EXIT_DURATION_MS = 500;
@@ -296,20 +318,22 @@ export default function SuperadminPage() {
   const [tabTransitionState, setTabTransitionState] = useState<'idle' | 'exiting' | 'entering'>('entering');
   const [sidebarState, setSidebarState] = useState<'expanded' | 'opening' | 'collapsing' | 'collapsed'>('collapsed');
   const sidebarCollapseTimerRef = useRef<number | null>(null);
-  const bodyScrollYRef = useRef(0);
   const clinicaModalCloseTimerRef = useRef<number | null>(null);
+  const tipoNegocioModalCloseTimerRef = useRef<number | null>(null);
   const usuarioModalCloseTimerRef = useRef<number | null>(null);
   const personaModalCloseTimerRef = useRef<number | null>(null);
   const rowDetailCloseTimerRef = useRef<number | null>(null);
   const sessionRevokedRedirectTimerRef = useRef<number | null>(null);
   const loadedTabsRef = useRef({
     Clinicas: false,
+    TiposNegocio: false,
     Usuarios: false,
     Personas: false,
     Sesiones: false
   });
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
   const [rowDetailClosing, setRowDetailClosing] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
@@ -352,6 +376,7 @@ export default function SuperadminPage() {
   });
   const [, setPersonaMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [clinicaPaginaActual, setClinicaPaginaActual] = useState(1);
+  const [tipoNegocioPaginaActual, setTipoNegocioPaginaActual] = useState(1);
   const [usuarioPaginaActual, setUsuarioPaginaActual] = useState(1);
   const [personaPaginaActual, setPersonaPaginaActual] = useState(1);
   const [sesionPaginaActual, setSesionPaginaActual] = useState(1);
@@ -360,6 +385,13 @@ export default function SuperadminPage() {
   const [sesionesLoading, setSesionesLoading] = useState(false);
   const [sessionIdActual, setSessionIdActual] = useState<string | null>(null);
   const [clinicasOpciones, setClinicasOpciones] = useState<Clinica[]>([]);
+  const [tiposNegocioLoading, setTiposNegocioLoading] = useState(false);
+  const [tiposNegocioOpciones, setTiposNegocioOpciones] = useState<TipoNegocio[]>([]);
+  const [tipoNegocioModalOpen, setTipoNegocioModalOpen] = useState(false);
+  const [tipoNegocioModalClosing, setTipoNegocioModalClosing] = useState(false);
+  const [tipoNegocioModalMode, setTipoNegocioModalMode] = useState<'create' | 'edit'>('create');
+  const [tipoNegocioEditingId, setTipoNegocioEditingId] = useState<string | null>(null);
+  const [tipoNegocioForm, setTipoNegocioForm] = useState<TipoNegocioForm>({ codigo: '', nombre: '' });
   const [globalMessage, setGlobalMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [clinicaModalOpen, setClinicaModalOpen] = useState(false);
   const [clinicaModalClosing, setClinicaModalClosing] = useState(false);
@@ -367,6 +399,7 @@ export default function SuperadminPage() {
   const [clinicaEditingId, setClinicaEditingId] = useState<string | null>(null);
   const [clinicaForm, setClinicaForm] = useState<ClinicaForm>({
     nombre: '',
+    tipo_negocio_id: '',
     ruc: '',
     direccion: '',
     telefono: '',
@@ -413,8 +446,6 @@ export default function SuperadminPage() {
     if (isSessionRevokedModalOpen) return;
 
     setIsMobileSidebarOpen(false);
-    document.body.classList.remove('superadmin-mobile-lock');
-    document.body.style.top = '';
     localStorage.removeItem('sessionId');
     setIsSessionRevokedModalOpen(true);
 
@@ -493,6 +524,20 @@ export default function SuperadminPage() {
     }, MODAL_EXIT_DURATION_MS);
   }, [clinicaModalOpen, clinicaModalClosing]);
 
+  const closeTipoNegocioModal = useCallback(() => {
+    if (!tipoNegocioModalOpen || tipoNegocioModalClosing) return;
+    if (tipoNegocioModalCloseTimerRef.current) {
+      window.clearTimeout(tipoNegocioModalCloseTimerRef.current);
+      tipoNegocioModalCloseTimerRef.current = null;
+    }
+    setTipoNegocioModalClosing(true);
+    tipoNegocioModalCloseTimerRef.current = window.setTimeout(() => {
+      setTipoNegocioModalOpen(false);
+      setTipoNegocioModalClosing(false);
+      tipoNegocioModalCloseTimerRef.current = null;
+    }, MODAL_EXIT_DURATION_MS);
+  }, [tipoNegocioModalOpen, tipoNegocioModalClosing]);
+
   const closeUsuarioModal = useCallback(() => {
     if (!usuarioModalOpen || usuarioModalClosing) return;
     if (usuarioModalCloseTimerRef.current) {
@@ -539,8 +584,6 @@ export default function SuperadminPage() {
     if (isLoggingOut) return;
 
     setIsMobileSidebarOpen(false);
-    document.body.classList.remove('superadmin-mobile-lock');
-    document.body.style.top = '';
     setIsLoggingOut(true);
     setIsEntering(false);
     setIsExiting(true);
@@ -619,10 +662,27 @@ export default function SuperadminPage() {
         setClinicas(ordenarClinicas(data.data));
       }
     } catch {
-      setClinicaMessage({ type: 'error', text: 'No se pudo cargar el listado de clínicas.' });
+      setClinicaMessage({ type: 'error', text: 'No se pudo cargar el listado de empresas.' });
     } finally {
       if (!silent) {
         setClinicasLoading(false);
+      }
+    }
+  };
+
+  const cargarTiposNegocio = async (silent = false) => {
+    if (!silent) {
+      setTiposNegocioLoading(true);
+    }
+    try {
+      const response = await fetchWithAuthRetry(API_TIPOS_NEGOCIO);
+      const data = response.ok ? await response.json() : { data: [] };
+      setTiposNegocioOpciones(Array.isArray(data.data) ? data.data : []);
+    } catch {
+      setClinicaMessage({ type: 'error', text: 'No se pudo cargar la lista de tipos de negocio.' });
+    } finally {
+      if (!silent) {
+        setTiposNegocioLoading(false);
       }
     }
   };
@@ -660,7 +720,7 @@ export default function SuperadminPage() {
       setPersonasOpciones(Array.isArray(personasData.data) ? personasData.data : []);
       setClinicasOpciones(Array.isArray(clinicasData.data) ? clinicasData.data : []);
     } catch {
-      setUsuarioMessage({ type: 'error', text: 'No se pudieron cargar personas y clínicas para usuarios.' });
+      setUsuarioMessage({ type: 'error', text: 'No se pudieron cargar personas y empresas para usuarios.' });
     }
   };
 
@@ -824,10 +884,105 @@ export default function SuperadminPage() {
     }
   };
 
+  const abrirModalCrearTipoNegocio = () => {
+    setTipoNegocioModalMode('create');
+    setTipoNegocioEditingId(null);
+    setTipoNegocioForm({ codigo: '', nombre: '' });
+    if (tipoNegocioModalCloseTimerRef.current) {
+      window.clearTimeout(tipoNegocioModalCloseTimerRef.current);
+      tipoNegocioModalCloseTimerRef.current = null;
+    }
+    setTipoNegocioModalClosing(false);
+    setTipoNegocioModalOpen(true);
+  };
+
+  const abrirModalEditarTipoNegocio = (tipo: TipoNegocio) => {
+    setTipoNegocioModalMode('edit');
+    setTipoNegocioEditingId(tipo.id);
+    setTipoNegocioForm({ codigo: tipo.codigo || '', nombre: tipo.nombre || '' });
+    if (tipoNegocioModalCloseTimerRef.current) {
+      window.clearTimeout(tipoNegocioModalCloseTimerRef.current);
+      tipoNegocioModalCloseTimerRef.current = null;
+    }
+    setTipoNegocioModalClosing(false);
+    setTipoNegocioModalOpen(true);
+  };
+
+  const guardarTipoNegocio = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!tipoNegocioFormValidation.formValido) {
+      setGlobalMessage({ type: 'error', text: 'Completa código y nombre del tipo de negocio.' });
+      return;
+    }
+
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const isEdit = tipoNegocioModalMode === 'edit' && tipoNegocioEditingId;
+      const endpoint = isEdit ? `${API_TIPOS_NEGOCIO}/${tipoNegocioEditingId}` : API_TIPOS_NEGOCIO;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const payload = {
+        codigo: tipoNegocioForm.codigo.trim().toUpperCase(),
+        nombre: tipoNegocioForm.nombre.trim()
+      };
+
+      const response = await fetch(endpoint, {
+        method,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...csrfHeaders
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo guardar el tipo de negocio.' });
+        return;
+      }
+
+      setGlobalMessage({
+        type: 'success',
+        text: isEdit ? 'Tipo de negocio actualizado.' : 'Tipo de negocio creado.'
+      });
+      closeTipoNegocioModal();
+      await cargarTiposNegocio(true);
+    } catch {
+      setGlobalMessage({ type: 'error', text: 'Error de conexión al guardar tipo de negocio.' });
+    }
+  };
+
+  const eliminarTipoNegocio = async (tipo: TipoNegocio) => {
+    const confirmed = window.confirm(`¿Eliminar el tipo de negocio "${tipo.nombre}"?`);
+    if (!confirmed) return;
+
+    try {
+      const csrfHeaders = await getCsrfHeader();
+      const response = await fetch(`${API_TIPOS_NEGOCIO}/${tipo.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: csrfHeaders
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo eliminar el tipo de negocio.' });
+        return;
+      }
+
+      setGlobalMessage({ type: 'success', text: 'Tipo de negocio eliminado.' });
+      await cargarTiposNegocio(true);
+    } catch {
+      setGlobalMessage({ type: 'error', text: 'Error de conexión al eliminar tipo de negocio.' });
+    }
+  };
+
   const abrirModalCrearClinica = () => {
     setClinicaModalMode('create');
     setClinicaEditingId(null);
-    setClinicaForm({ nombre: '', ruc: '', direccion: '', telefono: '', estado: 'ACTIVA' });
+    setClinicaForm({ nombre: '', tipo_negocio_id: '', ruc: '', direccion: '', telefono: '', estado: 'ACTIVA' });
     setClinicaMessage(null);
     if (clinicaModalCloseTimerRef.current) {
       window.clearTimeout(clinicaModalCloseTimerRef.current);
@@ -1135,6 +1290,7 @@ export default function SuperadminPage() {
     setClinicaEditingId(clinica.id);
     setClinicaForm({
       nombre: clinica.nombre || '',
+      tipo_negocio_id: clinica.tipo_negocio_id || '',
       ruc: clinica.ruc || '',
       direccion: clinica.direccion || '',
       telefono: clinica.telefono || '',
@@ -1154,7 +1310,12 @@ export default function SuperadminPage() {
     setClinicaMessage(null);
 
     if (!clinicaFormValidation.nombreValido) {
-      setClinicaMessage({ type: 'error', text: 'El nombre es obligatorio.' });
+      setClinicaMessage({ type: 'error', text: 'El nombre de empresa es obligatorio.' });
+      return;
+    }
+
+    if (!clinicaFormValidation.tipoNegocioValido) {
+      setClinicaMessage({ type: 'error', text: 'Selecciona un tipo de negocio.' });
       return;
     }
 
@@ -1178,6 +1339,7 @@ export default function SuperadminPage() {
 
       const payload = {
         nombre: clinicaForm.nombre.trim(),
+        tipo_negocio_id: clinicaForm.tipo_negocio_id,
         ruc: clinicaForm.ruc,
         direccion: clinicaForm.direccion.trim(),
         telefono: clinicaForm.telefono,
@@ -1200,12 +1362,12 @@ export default function SuperadminPage() {
 
       const data = await response.json();
       if (!response.ok) {
-        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo guardar la clínica.' });
-        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo guardar la clínica.' });
+        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo guardar la empresa.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo guardar la empresa.' });
         return;
       }
 
-      const successMsg = isEdit ? 'Clínica actualizada.' : 'Clínica creada.';
+      const successMsg = isEdit ? 'Empresa actualizada.' : 'Empresa creada.';
       setClinicaMessage({ type: 'success', text: successMsg });
       setGlobalMessage({ type: 'success', text: successMsg });
       if (data.data) {
@@ -1222,7 +1384,7 @@ export default function SuperadminPage() {
         await refreshDashboardStats();
       }
     } catch {
-      setClinicaMessage({ type: 'error', text: 'Error de conexión al guardar clínica.' });
+      setClinicaMessage({ type: 'error', text: 'Error de conexión al guardar empresa.' });
     }
   };
 
@@ -1237,12 +1399,12 @@ export default function SuperadminPage() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo desactivar la clínica.' });
-        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo desactivar la clínica.' });
+        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo desactivar la empresa.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo desactivar la empresa.' });
         return;
       }
-      setClinicaMessage({ type: 'success', text: 'Clínica desactivada.' });
-      setGlobalMessage({ type: 'success', text: 'Clínica desactivada.' });
+      setClinicaMessage({ type: 'success', text: 'Empresa desactivada.' });
+      setGlobalMessage({ type: 'success', text: 'Empresa desactivada.' });
       if (data.data) {
         setClinicas((prev) => ordenarClinicas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
       }
@@ -1250,7 +1412,7 @@ export default function SuperadminPage() {
         await refreshDashboardStats();
       }
     } catch {
-      setClinicaMessage({ type: 'error', text: 'Error de conexión al desactivar clínica.' });
+      setClinicaMessage({ type: 'error', text: 'Error de conexión al desactivar empresa.' });
     }
   };
 
@@ -1265,12 +1427,12 @@ export default function SuperadminPage() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo reactivar la clínica.' });
-        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo reactivar la clínica.' });
+        setClinicaMessage({ type: 'error', text: data.error || 'No se pudo reactivar la empresa.' });
+        setGlobalMessage({ type: 'error', text: data.error || 'No se pudo reactivar la empresa.' });
         return;
       }
-      setClinicaMessage({ type: 'success', text: 'Clínica reactivada.' });
-      setGlobalMessage({ type: 'success', text: 'Clínica reactivada.' });
+      setClinicaMessage({ type: 'success', text: 'Empresa reactivada.' });
+      setGlobalMessage({ type: 'success', text: 'Empresa reactivada.' });
       if (data.data) {
         setClinicas((prev) => ordenarClinicas(prev.map((item) => (item.id === data.data.id ? data.data : item))));
       }
@@ -1278,7 +1440,7 @@ export default function SuperadminPage() {
         await refreshDashboardStats();
       }
     } catch {
-      setClinicaMessage({ type: 'error', text: 'Error de conexión al reactivar clínica.' });
+      setClinicaMessage({ type: 'error', text: 'Error de conexión al reactivar empresa.' });
     }
   };
 
@@ -1400,6 +1562,11 @@ export default function SuperadminPage() {
   }, [state]);
 
   useEffect(() => {
+    if (state !== 'allowed') return;
+    document.title = `Superadmin - ${TAB_META[activeTab].label} | StarMOT`;
+  }, [state, activeTab]);
+
+  useEffect(() => {
     // Obtener el ID de la sesión actual del localStorage
     const id = localStorage.getItem('sessionId');
     setSessionIdActual(id);
@@ -1416,6 +1583,15 @@ export default function SuperadminPage() {
       if (loadedTabsRef.current.Clinicas) return;
       loadedTabsRef.current.Clinicas = true;
       cargarClinicas();
+      cargarTiposNegocio();
+    }
+  }, [state, activeTab]);
+
+  useEffect(() => {
+    if (state === 'allowed' && activeTab === 'TiposNegocio') {
+      if (loadedTabsRef.current.TiposNegocio) return;
+      loadedTabsRef.current.TiposNegocio = true;
+      cargarTiposNegocio();
     }
   }, [state, activeTab]);
 
@@ -1531,18 +1707,30 @@ export default function SuperadminPage() {
 
   const clinicaFormValidation = useMemo(() => {
     const nombreValido = clinicaForm.nombre.trim().length > 0;
+    const tipoNegocioValido = clinicaForm.tipo_negocio_id.trim().length > 0;
     const rucValido = /^\d{11}$/.test(clinicaForm.ruc);
     const direccionValida = clinicaForm.direccion.trim().length > 0;
     const telefonoValido = /^\d+$/.test(clinicaForm.telefono) && clinicaForm.telefono.trim().length > 0;
 
     return {
       nombreValido,
+      tipoNegocioValido,
       rucValido,
       direccionValida,
       telefonoValido,
-      formValido: nombreValido && rucValido && direccionValida && telefonoValido
+      formValido: nombreValido && tipoNegocioValido && rucValido && direccionValida && telefonoValido
     };
   }, [clinicaForm]);
+
+  const tipoNegocioFormValidation = useMemo(() => {
+    const codigoValido = tipoNegocioForm.codigo.trim().length > 0;
+    const nombreValido = tipoNegocioForm.nombre.trim().length > 0;
+    return {
+      codigoValido,
+      nombreValido,
+      formValido: codigoValido && nombreValido
+    };
+  }, [tipoNegocioForm]);
 
   const usuarioFormValidation = useMemo(() => {
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
@@ -1607,6 +1795,13 @@ export default function SuperadminPage() {
     }, {});
   }, [clinicasOpciones]);
 
+  const tipoNegocioNombrePorId = useMemo(() => {
+    return tiposNegocioOpciones.reduce<Record<string, string>>((acc, tipo) => {
+      acc[tipo.id] = tipo.nombre;
+      return acc;
+    }, {});
+  }, [tiposNegocioOpciones]);
+
   const searchHasEdgeSpaces = searchQuery.length > 0 && searchQuery !== searchQuery.trim();
 
   const filteredClinicas = useMemo(() => {
@@ -1619,6 +1814,7 @@ export default function SuperadminPage() {
     const dateQuery = parseDateQuery(searchQuery);
 
     return clinicas.filter((clinica) => {
+      const tipoNegocio = tipoNegocioNombrePorId[clinica.tipo_negocio_id || ''] || '-';
       const createdKey = toLocalDateKey(clinica.created_at);
       if (dateQuery) {
         return createdKey === dateQuery;
@@ -1626,6 +1822,7 @@ export default function SuperadminPage() {
 
       const haystack = normalizeText([
         clinica.nombre,
+        tipoNegocio,
         clinica.ruc || '',
         clinica.direccion || '',
         clinica.telefono || '',
@@ -1647,7 +1844,7 @@ export default function SuperadminPage() {
 
       return false;
     });
-  }, [clinicas, searchQuery, searchHasEdgeSpaces]);
+  }, [clinicas, searchQuery, searchHasEdgeSpaces, tipoNegocioNombrePorId]);
 
   const filteredClinicasActivasNombres = useMemo(() => {
     if (searchHasEdgeSpaces) return [];
@@ -1657,6 +1854,17 @@ export default function SuperadminPage() {
     if (!query) return source.slice(0, MAX_TOOLTIP_ITEMS);
     return source.filter((item) => normalizeText(item).includes(query)).slice(0, MAX_TOOLTIP_ITEMS);
   }, [stats.clinicasActivasNombres, searchQuery, searchHasEdgeSpaces]);
+
+  const filteredTiposNegocio = useMemo(() => {
+    if (searchHasEdgeSpaces) return [];
+
+    const query = normalizeText(searchQuery);
+    if (!query) return tiposNegocioOpciones;
+
+    return tiposNegocioOpciones.filter((tipo) =>
+      normalizeText(`${tipo.codigo} ${tipo.nombre}`).includes(query)
+    );
+  }, [tiposNegocioOpciones, searchQuery, searchHasEdgeSpaces]);
 
   const filteredUsuariosActivosNombres = useMemo(() => {
     if (searchHasEdgeSpaces) return [];
@@ -1814,7 +2022,21 @@ export default function SuperadminPage() {
   }, []);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(min-width: 901px)');
+    const mobileMediaQuery = window.matchMedia('(max-width: 1024px)');
+    const handleMobileViewportChange = () => {
+      setIsMobileViewport(mobileMediaQuery.matches);
+    };
+
+    handleMobileViewportChange();
+    mobileMediaQuery.addEventListener('change', handleMobileViewportChange);
+
+    return () => {
+      mobileMediaQuery.removeEventListener('change', handleMobileViewportChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1025px)');
     const handleViewportChange = () => {
       if (mediaQuery.matches) {
         setIsMobileSidebarOpen(false);
@@ -1830,34 +2052,27 @@ export default function SuperadminPage() {
   }, []);
 
   useEffect(() => {
-    const isMobileViewport = window.matchMedia('(max-width: 900px)').matches;
     if (!isMobileViewport) {
-      document.body.classList.remove('superadmin-mobile-lock');
-      document.body.style.top = '';
+      document.body.style.overflow = '';
       return;
     }
 
     if (isMobileSidebarOpen) {
-      bodyScrollYRef.current = window.scrollY;
-      document.body.style.top = `-${bodyScrollYRef.current}px`;
-      document.body.classList.add('superadmin-mobile-lock');
+      document.body.style.overflow = 'hidden';
       return;
     }
 
-    const savedTop = document.body.style.top;
-    const restoredScroll = savedTop ? Math.abs(parseInt(savedTop, 10)) : bodyScrollYRef.current;
-    document.body.classList.remove('superadmin-mobile-lock');
-    document.body.style.top = '';
-    window.scrollTo(0, restoredScroll || 0);
-  }, [isMobileSidebarOpen]);
+    document.body.style.overflow = '';
+  }, [isMobileSidebarOpen, isMobileViewport]);
 
   useEffect(() => {
     return () => {
-      document.body.classList.remove('superadmin-mobile-lock');
-      document.body.style.top = '';
-
+      document.body.style.overflow = '';
       if (clinicaModalCloseTimerRef.current) {
         window.clearTimeout(clinicaModalCloseTimerRef.current);
+      }
+      if (tipoNegocioModalCloseTimerRef.current) {
+        window.clearTimeout(tipoNegocioModalCloseTimerRef.current);
       }
       if (usuarioModalCloseTimerRef.current) {
         window.clearTimeout(usuarioModalCloseTimerRef.current);
@@ -1875,7 +2090,7 @@ export default function SuperadminPage() {
   }, []);
 
   useEffect(() => {
-    const hasModalOpen = clinicaModalOpen || usuarioModalOpen || personaModalOpen || Boolean(rowDetail);
+    const hasModalOpen = clinicaModalOpen || tipoNegocioModalOpen || usuarioModalOpen || personaModalOpen || Boolean(rowDetail);
     if (!hasModalOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1883,6 +2098,10 @@ export default function SuperadminPage() {
 
       if (rowDetail) {
         closeRowDetail();
+        return;
+      }
+      if (tipoNegocioModalOpen) {
+        closeTipoNegocioModal();
         return;
       }
       if (personaModalOpen) {
@@ -1902,16 +2121,20 @@ export default function SuperadminPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     clinicaModalOpen,
+    tipoNegocioModalOpen,
     usuarioModalOpen,
     personaModalOpen,
     rowDetail,
     closeClinicaModal,
+    closeTipoNegocioModal,
     closeUsuarioModal,
     closePersonaModal,
     closeRowDetail
   ]);
 
   const handleSidebarMouseEnter = useCallback(() => {
+    if (isMobileViewport) return;
+
     if (sidebarCollapseTimerRef.current) {
       window.clearTimeout(sidebarCollapseTimerRef.current);
       sidebarCollapseTimerRef.current = null;
@@ -1924,9 +2147,11 @@ export default function SuperadminPage() {
       setSidebarState('expanded');
       sidebarCollapseTimerRef.current = null;
     }, 220);
-  }, [sidebarState]);
+  }, [isMobileViewport, sidebarState]);
 
   const handleSidebarMouseLeave = useCallback(() => {
+    if (isMobileViewport) return;
+
     if (sidebarCollapseTimerRef.current) {
       window.clearTimeout(sidebarCollapseTimerRef.current);
     }
@@ -1936,9 +2161,9 @@ export default function SuperadminPage() {
       setSidebarState('collapsed');
       sidebarCollapseTimerRef.current = null;
     }, 240);
-  }, []);
+  }, [isMobileViewport]);
 
-  const isSidebarCompact = sidebarState === 'collapsed' || sidebarState === 'collapsing';
+  const isSidebarCompact = !isMobileViewport && (sidebarState === 'collapsed' || sidebarState === 'collapsing');
 
   if (state === 'loading') {
     return null;
@@ -1972,17 +2197,17 @@ export default function SuperadminPage() {
       <section className={`superadmin-layout ${isSidebarCompact ? 'sidebar-collapsed' : ''} ${isMobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
         <aside
           className={`superadmin-sidebar ${isSidebarCompact ? 'collapsed' : ''} ${sidebarState === 'collapsing' ? 'is-collapsing' : ''} ${sidebarState === 'opening' ? 'is-opening' : ''}`}
-          onMouseEnter={handleSidebarMouseEnter}
-          onMouseLeave={handleSidebarMouseLeave}
+          onMouseEnter={isMobileViewport ? undefined : handleSidebarMouseEnter}
+          onMouseLeave={isMobileViewport ? undefined : handleSidebarMouseLeave}
         >
           <div className="superadmin-brand">
             <div className="superadmin-brand-logo">
-              <img src="/logo.png" alt="Logo SMOT" className="superadmin-brand-logo-img" />
+              <img src="/logo.png" alt="Logo StarMOT" className="superadmin-brand-logo-img" />
             </div>
             <h1 className="superadmin-title">StarMOT</h1>
           </div>
 
-          <p className="superadmin-nav-label">SMOT</p>
+          <p className="superadmin-nav-label">StarMOT</p>
           <nav className="superadmin-nav">
             {TABS.map((tab) => (
               <button
@@ -1992,7 +2217,7 @@ export default function SuperadminPage() {
                 data-label={TAB_META[tab].label}
               >
                 <span className="superadmin-tab-dot" aria-hidden="true">{TAB_META[tab].icon}</span>
-                <span className="superadmin-tab-text">{tab}</span>
+                <span className="superadmin-tab-text">{TAB_META[tab].label}</span>
               </button>
             ))}
           </nav>
@@ -2051,8 +2276,7 @@ export default function SuperadminPage() {
           <div className="superadmin-heading-wrap">
             <div className={`superadmin-heading-animated ${tabTransitionState === 'exiting' ? 'is-exiting' : ''} ${tabTransitionState === 'entering' ? 'is-entering' : ''}`}>
               <p className="superadmin-kicker">Panel principal</p>
-              <h2 className="superadmin-heading">{renderTab}</h2>
-              <p className="superadmin-description">Control operativo del sistema clínico.</p>
+              <h2 className="superadmin-heading">{TAB_META[renderTab].label}</h2>
             </div>
             <div className="superadmin-badges">
               <span className="badge-open">Activo</span>
@@ -2069,7 +2293,7 @@ export default function SuperadminPage() {
                   onMouseEnter={() => setOpenListCard('clinicas')}
                   onMouseLeave={() => setOpenListCard((prev) => (prev === 'clinicas' ? null : prev))}
                 >
-                  <h3>Clínicas activas</h3>
+                  <h3>Empresas activas</h3>
                   <div
                     className="metric-ring"
                     style={{
@@ -2084,7 +2308,7 @@ export default function SuperadminPage() {
                   </div>
                   {openListCard === 'clinicas' && (
                     <div className="metric-popover">
-                      <p>Clínicas activas (máx. 10)</p>
+                      <p>Empresas activas (máx. 10)</p>
                       <ul>
                         {filteredClinicasActivasNombres.length > 0 ? (
                           filteredClinicasActivasNombres.map((nombre) => <li key={nombre}>{nombre}</li>)
@@ -2203,9 +2427,9 @@ export default function SuperadminPage() {
             <section className="superadmin-grid clinicas-grid">
               <article className="superadmin-card clinicas-card">
                 <div className="clinicas-header">
-                  <h3>Listado de clínicas</h3>
+                  <h3>Listado de empresas</h3>
                   <button type="button" className="clinica-btn-primary" onClick={abrirModalCrearClinica}>
-                    Nueva clínica
+                    Nueva empresa
                   </button>
                 </div>
 
@@ -2214,6 +2438,7 @@ export default function SuperadminPage() {
                     <thead>
                       <tr>
                         <th>Nombre</th>
+                        <th>Tipo de negocio</th>
                         <th>RUC</th>
                         <th>Dirección</th>
                         <th>Teléfono</th>
@@ -2225,11 +2450,11 @@ export default function SuperadminPage() {
                     <tbody>
                       {clinicasLoading ? (
                         <tr>
-                          <td colSpan={7}>Cargando clínicas...</td>
+                          <td colSpan={8}>Cargando empresas...</td>
                         </tr>
                       ) : filteredClinicas.length === 0 ? (
                         <tr>
-                          <td colSpan={7}>No hay resultados para la búsqueda.</td>
+                          <td colSpan={8}>No hay resultados para la búsqueda.</td>
                         </tr>
                       ) : (
                         filteredClinicas
@@ -2242,6 +2467,7 @@ export default function SuperadminPage() {
                             return (
                               <tr key={clinica.id} className={desactivada ? 'clinica-row-disabled' : ''}>
                                 <td>{clinica.nombre}</td>
+                                <td>{tipoNegocioNombrePorId[clinica.tipo_negocio_id || ''] || '-'}</td>
                                 <td>{clinica.ruc || '-'}</td>
                                 <td>{clinica.direccion || '-'}</td>
                                 <td>{clinica.telefono || '-'}</td>
@@ -2252,8 +2478,9 @@ export default function SuperadminPage() {
                                     <button
                                       type="button"
                                       className="detalle"
-                                      onClick={() => openRowDetail(`Clínica: ${clinica.nombre}`, [
+                                      onClick={() => openRowDetail(`Empresa: ${clinica.nombre}`, [
                                         { label: 'Nombre', value: clinica.nombre },
+                                        { label: 'Tipo de negocio', value: tipoNegocioNombrePorId[clinica.tipo_negocio_id || ''] || '-' },
                                         { label: 'RUC', value: clinica.ruc },
                                         { label: 'Dirección', value: clinica.direccion },
                                         { label: 'Teléfono', value: clinica.telefono },
@@ -2294,27 +2521,42 @@ export default function SuperadminPage() {
               </article>
 
               {clinicaModalOpen && (
-                <div
-                  className={`clinica-modal-backdrop ${clinicaModalClosing ? 'is-closing' : ''}`}
-                  role="dialog"
-                  aria-modal="true"
-                  onMouseDown={(event) => {
-                    if (event.target === event.currentTarget) {
-                      closeClinicaModal();
-                    }
-                  }}
-                >
-                  <section className={`clinica-modal ${clinicaModalClosing ? 'is-closing' : ''}`}>
-                    <h3>{clinicaModalMode === 'create' ? 'Nueva clínica' : 'Editar clínica'}</h3>
+                <ModalPortal>
+                  <div
+                    className={`clinica-modal-backdrop ${clinicaModalClosing ? 'is-closing' : ''}`}
+                    role="dialog"
+                    aria-modal="true"
+                    onMouseDown={(event) => {
+                      if (event.target === event.currentTarget) {
+                        closeClinicaModal();
+                      }
+                    }}
+                  >
+                    <section className={`clinica-modal ${clinicaModalClosing ? 'is-closing' : ''}`}>
+                    <h3>{clinicaModalMode === 'create' ? 'Nueva empresa' : 'Editar empresa'}</h3>
 
                     <form onSubmit={guardarClinica} className="clinica-form">
                       <label>
-                        Nombre
+                        Nombre de empresa
                         <input
                           value={clinicaForm.nombre}
                           onChange={(event) => setClinicaForm((prev) => ({ ...prev, nombre: event.target.value }))}
                           required
                         />
+                      </label>
+
+                      <label>
+                        Tipo de negocio
+                        <select
+                          value={clinicaForm.tipo_negocio_id}
+                          onChange={(event) => setClinicaForm((prev) => ({ ...prev, tipo_negocio_id: event.target.value }))}
+                          required
+                        >
+                          <option value="">Seleccionar tipo de negocio</option>
+                          {tiposNegocioOpciones.map((tipo) => (
+                            <option key={tipo.id} value={tipo.id}>{tipo.nombre}</option>
+                          ))}
+                        </select>
                       </label>
 
                       <label>
@@ -2364,8 +2606,128 @@ export default function SuperadminPage() {
                         <button type="submit" className="clinica-btn-primary clinica-btn-save" disabled={!clinicaFormValidation.formValido}>Guardar</button>
                       </div>
                     </form>
-                  </section>
+                    </section>
+                  </div>
+                </ModalPortal>
+              )}
+            </section>
+          ) : renderTab === 'TiposNegocio' ? (
+            <section className="superadmin-grid clinicas-grid">
+              <article className="superadmin-card clinicas-card">
+                <div className="clinicas-header">
+                  <h3>Tipos de negocio</h3>
+                  <button type="button" className="clinica-btn-primary" onClick={abrirModalCrearTipoNegocio}>
+                    Nuevo tipo
+                  </button>
                 </div>
+
+                <div className="clinicas-table-wrap">
+                  <table className="clinicas-table clinicas-table--tipos">
+                    <thead>
+                      <tr>
+                        <th>Código</th>
+                        <th>Nombre</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tiposNegocioLoading ? (
+                        <tr>
+                          <td colSpan={3}>Cargando tipos de negocio...</td>
+                        </tr>
+                      ) : filteredTiposNegocio.length === 0 ? (
+                        <tr>
+                          <td colSpan={3}>No hay resultados para la búsqueda.</td>
+                        </tr>
+                      ) : (
+                        filteredTiposNegocio
+                          .slice(
+                            (tipoNegocioPaginaActual - 1) * ITEMS_POR_PAGINA,
+                            tipoNegocioPaginaActual * ITEMS_POR_PAGINA
+                          )
+                          .map((tipo) => (
+                            <tr key={tipo.id}>
+                              <td>{tipo.codigo}</td>
+                              <td>{tipo.nombre}</td>
+                              <td>
+                                <div className="clinica-actions">
+                                  <button
+                                    type="button"
+                                    className="detalle"
+                                    onClick={() => openRowDetail(`Tipo de negocio: ${tipo.nombre}`, [
+                                      { label: 'Código', value: tipo.codigo },
+                                      { label: 'Nombre', value: tipo.nombre }
+                                    ])}
+                                  >
+                                    👁 Ver
+                                  </button>
+                                  <button type="button" onClick={() => abrirModalEditarTipoNegocio(tipo)}>Editar</button>
+                                  <button type="button" className="desactivar" onClick={() => eliminarTipoNegocio(tipo)}>
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredTiposNegocio.length > ITEMS_POR_PAGINA && (
+                  <Pagination
+                    totalItems={filteredTiposNegocio.length}
+                    itemsPerPage={ITEMS_POR_PAGINA}
+                    currentPage={tipoNegocioPaginaActual}
+                    onPageChange={setTipoNegocioPaginaActual}
+                  />
+                )}
+              </article>
+
+              {tipoNegocioModalOpen && (
+                <ModalPortal>
+                  <div
+                    className={`clinica-modal-backdrop ${tipoNegocioModalClosing ? 'is-closing' : ''}`}
+                    role="dialog"
+                    aria-modal="true"
+                    onMouseDown={(event) => {
+                      if (event.target === event.currentTarget) {
+                        closeTipoNegocioModal();
+                      }
+                    }}
+                  >
+                    <section className={`clinica-modal ${tipoNegocioModalClosing ? 'is-closing' : ''}`}>
+                    <h3>{tipoNegocioModalMode === 'create' ? 'Nuevo tipo de negocio' : 'Editar tipo de negocio'}</h3>
+
+                    <form onSubmit={guardarTipoNegocio} className="clinica-form">
+                      <label>
+                        Código
+                        <input
+                          value={tipoNegocioForm.codigo}
+                          onChange={(event) => setTipoNegocioForm((prev) => ({ ...prev, codigo: event.target.value.toUpperCase() }))}
+                          maxLength={20}
+                          required
+                        />
+                      </label>
+
+                      <label>
+                        Nombre
+                        <input
+                          value={tipoNegocioForm.nombre}
+                          onChange={(event) => setTipoNegocioForm((prev) => ({ ...prev, nombre: event.target.value }))}
+                          maxLength={100}
+                          required
+                        />
+                      </label>
+
+                      <div className="clinica-modal-actions">
+                        <button type="button" className="clinica-btn-cancel" onClick={closeTipoNegocioModal}>Cancelar</button>
+                        <button type="submit" className="clinica-btn-primary clinica-btn-save" disabled={!tipoNegocioFormValidation.formValido}>Guardar</button>
+                      </div>
+                    </form>
+                    </section>
+                  </div>
+                </ModalPortal>
               )}
             </section>
           ) : renderTab === 'Usuarios' ? (
@@ -2385,7 +2747,7 @@ export default function SuperadminPage() {
                         <th>Email</th>
                         <th>Rol</th>
                         <th>Persona</th>
-                        <th>Clínica</th>
+                        <th>Empresa</th>
                         <th>Estado</th>
                         <th>Creación</th>
                         <th>Acciones</th>
@@ -2425,7 +2787,7 @@ export default function SuperadminPage() {
                                         { label: 'Email', value: usuarioItem.email },
                                         { label: 'Rol', value: usuarioItem.rol },
                                         { label: 'Persona', value: personaNombrePorId[usuarioItem.persona_id] || usuarioItem.persona_id },
-                                        { label: 'Clínica', value: clinicaNombrePorId[usuarioItem.clinica_id || ''] || usuarioItem.clinica_id || '-' },
+                                        { label: 'Empresa', value: clinicaNombrePorId[usuarioItem.clinica_id || ''] || usuarioItem.clinica_id || '-' },
                                         { label: 'Estado', value: desactivado ? 'INACTIVO' : usuarioItem.estado },
                                         { label: 'Creación', value: new Date(usuarioItem.created_at).toLocaleString('es-PE') }
                                       ])}
@@ -2463,17 +2825,18 @@ export default function SuperadminPage() {
               </article>
 
               {usuarioModalOpen && (
-                <div
-                  className={`clinica-modal-backdrop ${usuarioModalClosing ? 'is-closing' : ''}`}
-                  role="dialog"
-                  aria-modal="true"
-                  onMouseDown={(event) => {
-                    if (event.target === event.currentTarget) {
-                      closeUsuarioModal();
-                    }
-                  }}
-                >
-                  <section className={`clinica-modal ${usuarioModalClosing ? 'is-closing' : ''}`}>
+                <ModalPortal>
+                  <div
+                    className={`clinica-modal-backdrop ${usuarioModalClosing ? 'is-closing' : ''}`}
+                    role="dialog"
+                    aria-modal="true"
+                    onMouseDown={(event) => {
+                      if (event.target === event.currentTarget) {
+                        closeUsuarioModal();
+                      }
+                    }}
+                  >
+                    <section className={`clinica-modal ${usuarioModalClosing ? 'is-closing' : ''}`}>
                     <h3>{usuarioModalMode === 'create' ? 'Nuevo usuario' : 'Editar usuario'}</h3>
 
                     <form onSubmit={guardarUsuario} className="clinica-form">
@@ -2500,13 +2863,13 @@ export default function SuperadminPage() {
                       </label>
 
                       <label>
-                        Clínica
+                        Empresa
                         <select
                           value={usuarioForm.clinica_id}
                           onChange={(event) => setUsuarioForm((prev) => ({ ...prev, clinica_id: event.target.value }))}
                           required
                         >
-                          <option value="">Seleccionar clínica</option>
+                          <option value="">Seleccionar empresa</option>
                           {clinicasOpciones.map((clinica) => (
                             <option key={clinica.id} value={clinica.id}>{clinica.nombre}</option>
                           ))}
@@ -2555,8 +2918,9 @@ export default function SuperadminPage() {
                         <button type="submit" className="clinica-btn-primary clinica-btn-save" disabled={!usuarioFormValidation.formValido}>Guardar</button>
                       </div>
                     </form>
-                  </section>
-                </div>
+                    </section>
+                  </div>
+                </ModalPortal>
               )}
             </section>
           ) : renderTab === 'Personas' ? (
@@ -2658,17 +3022,18 @@ export default function SuperadminPage() {
               </article>
 
               {personaModalOpen && (
-                <div
-                  className={`clinica-modal-backdrop ${personaModalClosing ? 'is-closing' : ''}`}
-                  role="dialog"
-                  aria-modal="true"
-                  onMouseDown={(event) => {
-                    if (event.target === event.currentTarget) {
-                      closePersonaModal();
-                    }
-                  }}
-                >
-                  <section className={`clinica-modal ${personaModalClosing ? 'is-closing' : ''}`}>
+                <ModalPortal>
+                  <div
+                    className={`clinica-modal-backdrop ${personaModalClosing ? 'is-closing' : ''}`}
+                    role="dialog"
+                    aria-modal="true"
+                    onMouseDown={(event) => {
+                      if (event.target === event.currentTarget) {
+                        closePersonaModal();
+                      }
+                    }}
+                  >
+                    <section className={`clinica-modal ${personaModalClosing ? 'is-closing' : ''}`}>
                     <h3>{personaModalMode === 'create' ? 'Nueva persona' : 'Editar persona'}</h3>
 
                     <form onSubmit={guardarPersona} className="clinica-form">
@@ -2774,8 +3139,9 @@ export default function SuperadminPage() {
                         </button>
                       </div>
                     </form>
-                  </section>
-                </div>
+                    </section>
+                  </div>
+                </ModalPortal>
               )}
             </section>
           ) : renderTab === 'Sesiones' ? (
@@ -2872,7 +3238,7 @@ export default function SuperadminPage() {
           ) : (
             <section className="superadmin-grid">
               <article className="superadmin-card">
-                <h3>{activeTab}</h3>
+                <h3>{TAB_META[activeTab].label}</h3>
                 <p>Sección en construcción. Aquí colocaremos listado, filtros y acciones.</p>
               </article>
             </section>
@@ -2882,17 +3248,19 @@ export default function SuperadminPage() {
       </section>
 
       {isSessionRevokedModalOpen && (
-        <div
-          className="clinica-modal-backdrop"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="session-revoked-title"
-        >
-          <section className="clinica-modal clinica-modal-detail superadmin-revoked-modal">
-            <h3 id="session-revoked-title">Tu sesión fue revocada</h3>
-            <p className="superadmin-revoked-copy">Por seguridad, te redirigiremos al login.</p>
-          </section>
-        </div>
+        <ModalPortal>
+          <div
+            className="clinica-modal-backdrop"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="session-revoked-title"
+          >
+            <section className="clinica-modal clinica-modal-detail superadmin-revoked-modal">
+              <h3 id="session-revoked-title">Tu sesión fue revocada</h3>
+              <p className="superadmin-revoked-copy">Por seguridad, te redirigiremos al login.</p>
+            </section>
+          </div>
+        </ModalPortal>
       )}
 
       {globalMessage && (
@@ -2924,35 +3292,37 @@ export default function SuperadminPage() {
       )}
 
       {rowDetail && (
-        <div
-          className={`clinica-modal-backdrop ${rowDetailClosing ? 'is-closing' : ''}`}
-          role="dialog"
-          aria-modal="true"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeRowDetail();
-            }
-          }}
-        >
-          <section className={`clinica-modal clinica-modal-detail ${rowDetailClosing ? 'is-closing' : ''}`}>
-            <h3>{rowDetail.title}</h3>
+        <ModalPortal>
+          <div
+            className={`clinica-modal-backdrop ${rowDetailClosing ? 'is-closing' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                closeRowDetail();
+              }
+            }}
+          >
+            <section className={`clinica-modal clinica-modal-detail ${rowDetailClosing ? 'is-closing' : ''}`}>
+              <h3>{rowDetail.title}</h3>
 
-            <dl className="detail-grid">
-              {rowDetail.fields.map((field) => (
-                <div key={`${field.label}-${field.value}`} className="detail-grid-item">
-                  <dt>{field.label}</dt>
-                  <dd>{field.value}</dd>
-                </div>
-              ))}
-            </dl>
+              <dl className="detail-grid">
+                {rowDetail.fields.map((field) => (
+                  <div key={`${field.label}-${field.value}`} className="detail-grid-item">
+                    <dt>{field.label}</dt>
+                    <dd>{field.value}</dd>
+                  </div>
+                ))}
+              </dl>
 
-            <div className="clinica-modal-actions">
-              <button type="button" className="clinica-btn-primary clinica-btn-save" onClick={closeRowDetail}>
-                Cerrar
-              </button>
-            </div>
-          </section>
-        </div>
+              <div className="clinica-modal-actions">
+                <button type="button" className="clinica-btn-primary clinica-btn-save" onClick={closeRowDetail}>
+                  Cerrar
+                </button>
+              </div>
+            </section>
+          </div>
+        </ModalPortal>
       )}
 
       <style>{`
