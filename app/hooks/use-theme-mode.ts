@@ -36,10 +36,12 @@ const readStoredMode = (): ThemeMode => {
 
 export function useThemeMode() {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => readStoredMode());
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => resolveTheme(readStoredMode()));
   const transitionTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     applyTheme(themeMode);
+    setResolvedTheme(resolveTheme(themeMode));
   }, [themeMode]);
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export function useThemeMode() {
     const handlePreferenceChange = () => {
       if (themeMode === 'system') {
         applyTheme('system');
+        setResolvedTheme(resolveTheme('system'));
       }
     };
 
@@ -79,6 +82,7 @@ export function useThemeMode() {
     }
 
     setThemeModeState(nextMode);
+    setResolvedTheme(resolveTheme(nextMode));
 
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, nextMode);
@@ -89,6 +93,7 @@ export function useThemeMode() {
 
   return {
     themeMode,
+    resolvedTheme,
     setThemeMode
   };
 }

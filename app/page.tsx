@@ -3,7 +3,7 @@ import HomeClient from "./home.client";
 
 export const metadata: Metadata = {
   title: "Inicio",
-  description: "Inicio de StarMOT con acceso a login y documentación API.",
+  description: "Inicio de CliniCore con acceso a login y documentación API.",
 };
 
 export default function HomePage() {

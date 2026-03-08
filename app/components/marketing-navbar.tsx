@@ -1,0 +1,82 @@
+'use client';
+
+import Image from 'next/image';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { FiCreditCard, FiHome, FiLayers, FiLogIn, FiMail, FiMoon, FiSun } from 'react-icons/fi';
+import { HiOutlineRocketLaunch } from 'react-icons/hi2';
+import { useThemeMode } from '../hooks/use-theme-mode';
+
+const NAV_ITEMS = [
+  { href: '/', label: 'Inicio', icon: <FiHome /> },
+  { href: '/funcionalidades', label: 'Funcionalidades', icon: <FiLayers /> },
+  { href: '/planes', label: 'Planes', icon: <FiCreditCard /> },
+  { href: '/contacto', label: 'Contacto', icon: <FiMail /> }
+];
+
+export default function MarketingNavbar() {
+  const pathname = usePathname();
+  const { themeMode, resolvedTheme, setThemeMode } = useThemeMode();
+  const isLightActive = themeMode === 'light' || (themeMode === 'system' && resolvedTheme === 'light');
+  const isDarkActive = themeMode === 'dark' || (themeMode === 'system' && resolvedTheme === 'dark');
+
+  return (
+    <header className="marketing-header" aria-label="Barra principal">
+      <div className="marketing-header-inner">
+        <Link href="/" className="marketing-brand" aria-label="Ir al inicio">
+          <span className="marketing-brand-logo">
+            <Image src="/logo-clinicore.png" alt="Logo CliniCore" width={18} height={18} />
+          </span>
+          <strong className="marketing-brand-name">CliniCore</strong>
+        </Link>
+
+        <nav className="marketing-nav" aria-label="Navegación">
+          {NAV_ITEMS.map((item) => {
+            const itemPath = item.href.includes('#') ? item.href.split('#')[0] || '/' : item.href;
+            const isActive = pathname === itemPath;
+            return (
+              <Link key={item.href} href={item.href} className={`marketing-nav-link ${isActive ? 'is-active' : ''}`}>
+                <span aria-hidden="true">{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="marketing-header-actions">
+          <div className="marketing-theme-toggle" role="group" aria-label="Seleccionar tema">
+            <button
+              type="button"
+              className={`marketing-theme-btn ${isLightActive ? 'is-active' : ''}`}
+              suppressHydrationWarning
+              onClick={() => setThemeMode('light')}
+              aria-label="Modo claro"
+              title="Modo claro"
+            >
+              <FiSun />
+            </button>
+            <button
+              type="button"
+              className={`marketing-theme-btn ${isDarkActive ? 'is-active' : ''}`}
+              suppressHydrationWarning
+              onClick={() => setThemeMode('dark')}
+              aria-label="Modo oscuro"
+              title="Modo oscuro"
+            >
+              <FiMoon />
+            </button>
+          </div>
+
+          <Link href="/login" className="marketing-login-btn">
+            <FiLogIn aria-hidden="true" />
+            Iniciar sesión
+          </Link>
+          <Link href="/contacto" className="marketing-start-btn">
+            <HiOutlineRocketLaunch aria-hidden="true" />
+            Empieza gratis
+          </Link>
+        </div>
+      </div>
+    </header>
+  );
+}

@@ -169,7 +169,7 @@ html[data-theme='light'] .superadmin-page * {
 .superadmin-page {
   background:
     linear-gradient(130deg, rgba(86, 45, 24, 0.22), rgba(51, 22, 76, 0.24)),
-    url('/galaxia.jpg') center / cover no-repeat fixed !important;
+    linear-gradient(140deg, rgba(14, 9, 15, 0.95), rgba(31, 12, 36, 0.92)) !important;
 }
 
 .superadmin-sidebar,
@@ -310,12 +310,12 @@ html[data-theme='light'] .superadmin-page * {
 }
 
 .superadmin-page::before {
-  background-image: linear-gradient(140deg, rgba(0, 0, 0, 0.24), rgba(0, 0, 0, 0.18)), url('/galaxia.jpg');
+  background-image: linear-gradient(140deg, rgba(0, 0, 0, 0.24), rgba(0, 0, 0, 0.18));
   opacity: 1;
 }
 
 .superadmin-page::after {
-  background-image: linear-gradient(140deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.16)), url('/galaxia-claro.jpg');
+  background-image: linear-gradient(140deg, rgba(16, 16, 16, 0.24), rgba(10, 10, 10, 0.16));
   opacity: 0;
 }
 
@@ -2941,5 +2941,64 @@ html[data-theme='light'] :is(
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
   opacity: 1 !important;
+}
+
+/* Sistema degradado azul (global), excluyendo home */
+.superadmin-page::before,
+.superadmin-page::after {
+  background-image: none !important;
+  opacity: 0 !important;
+}
+
+.superadmin-page {
+  background: transparent !important;
+}
+
+.superadmin-sidebar,
+.superadmin-content,
+.superadmin-card,
+.superadmin-chart-card,
+.sessions-card,
+.metric-ring-card,
+.clinicas-card,
+.superadmin-denied,
+.superadmin-loading,
+.clinica-modal,
+.detail-grid-item,
+.superadmin-user-footer,
+.bars-wrap {
+  background: rgba(7, 20, 54, 0.66) !important;
+  border-color: rgba(131, 174, 248, 0.34) !important;
+  box-shadow: 0 14px 30px rgba(2, 9, 24, 0.42) !important;
+}
+
+.superadmin-topbar,
+.superadmin-heading-wrap {
+  background: linear-gradient(90deg, rgba(11, 28, 72, 0.82), rgba(8, 36, 98, 0.72)) !important;
+  border-color: rgba(132, 174, 248, 0.34) !important;
+}
+
+.clinica-actions button,
+.clinica-btn-primary,
+.clinica-modal-actions button,
+.superadmin-search,
+.chart-date-picker {
+  background: rgba(9, 28, 72, 0.62) !important;
+  border-color: rgba(132, 175, 248, 0.38) !important;
+  color: #eff5ff !important;
+}
+
+.clinica-form input,
+.clinica-form select,
+.superadmin-page textarea {
+  background: rgba(8, 24, 62, 0.7) !important;
+  border-color: rgba(132, 175, 248, 0.36) !important;
+  color: #eff5ff !important;
+}
+
+.superadmin-search::placeholder,
+.clinica-form input::placeholder,
+.superadmin-page textarea::placeholder {
+  color: rgba(208, 225, 250, 0.78) !important;
 }
 

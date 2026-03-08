@@ -1568,7 +1568,7 @@ export default function SuperadminPage() {
 
   useEffect(() => {
     if (state !== 'allowed') return;
-    document.title = `Superadmin - ${TAB_META[activeTab].label} | StarMOT`;
+    document.title = `Superadmin - ${TAB_META[activeTab].label} | CliniCore`;
   }, [state, activeTab]);
 
   useEffect(() => {
@@ -2229,12 +2229,12 @@ export default function SuperadminPage() {
         >
           <div className="superadmin-brand">
             <div className="superadmin-brand-logo">
-              <Image src="/logo.png" alt="Logo StarMOT" width={64} height={64} className="superadmin-brand-logo-img" />
+              <Image src="/logo-clinicore.png" alt="Logo CliniCore" width={64} height={64} className="superadmin-brand-logo-img" />
             </div>
-            <h1 className="superadmin-title">StarMOT</h1>
+            <h1 className="superadmin-title">CliniCore</h1>
           </div>
 
-          <p className="superadmin-nav-label">StarMOT</p>
+          <p className="superadmin-nav-label">CliniCore</p>
           <nav className="superadmin-nav">
             {TABS.map((tab) => (
               <button

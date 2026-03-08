@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useThemeMode, type ThemeMode } from '../hooks/use-theme-mode';
+import { FiArrowLeft, FiLock, FiMail, FiMoon, FiShield, FiSun } from 'react-icons/fi';
+import { useThemeMode } from '../hooks/use-theme-mode';
 import '../css/login.css';
 
 const API_BASE = '/api/backend';
@@ -21,7 +22,10 @@ export default function LoginPage() {
   const [messageType, setMessageType] = useState<'error' | 'success'>('error');
   const [isLoading, setIsLoading] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const { themeMode, setThemeMode } = useThemeMode();
+  const hasCheckedSessionRef = useRef(false);
+  const { themeMode, resolvedTheme, setThemeMode } = useThemeMode();
+  const isLightActive = themeMode === 'light' || (themeMode === 'system' && resolvedTheme === 'light');
+  const isDarkActive = themeMode === 'dark' || (themeMode === 'system' && resolvedTheme === 'dark');
 
   const handleGoHome = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -35,6 +39,9 @@ export default function LoginPage() {
 
   // Validar sesión activa al cargar
   useEffect(() => {
+    if (hasCheckedSessionRef.current) return;
+    hasCheckedSessionRef.current = true;
+
     const checkSession = async () => {
       try {
         const response = await fetch(API_ME, { credentials: 'include' });
@@ -146,38 +153,57 @@ export default function LoginPage() {
       <div className={`page-transition ${isExiting ? 'visible' : ''}`} aria-hidden="true" />
       <main className={`login-page ${isExiting ? 'is-exiting' : 'page-enter'}`}>
         <Link href="/" className="login-return-btn" aria-label="Volver al inicio" onClick={handleGoHome}>
-          ← Volver al inicio
+          <FiArrowLeft aria-hidden="true" />
+          <span>Volver al inicio</span>
         </Link>
 
-        <label className="login-theme-switch" aria-label="Seleccionar tema">
-          <span>Tema</span>
-          <select
-            value={themeMode}
-            onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+        <div className="login-theme-toggle" role="group" aria-label="Seleccionar tema">
+          <button
+            type="button"
+            className={`login-theme-btn ${isLightActive ? 'is-active' : ''}`}
+            suppressHydrationWarning
+            onClick={() => setThemeMode('light')}
+            aria-label="Modo claro"
+            title="Modo claro"
           >
-            <option value="system">Sistema</option>
-            <option value="light">Claro</option>
-            <option value="dark">Oscuro</option>
-          </select>
-        </label>
+            <FiSun />
+          </button>
+          <button
+            type="button"
+            className={`login-theme-btn ${isDarkActive ? 'is-active' : ''}`}
+            suppressHydrationWarning
+            onClick={() => setThemeMode('dark')}
+            aria-label="Modo oscuro"
+            title="Modo oscuro"
+          >
+            <FiMoon />
+          </button>
+        </div>
 
         <section className="login-shell">
-          <aside className="login-hero" aria-hidden="true">
+          <aside className="login-hero" aria-label="Resumen de plataforma">
             <div className="login-hero-content">
-              <h1>Impulsa tu operación digital</h1>
+              <p className="login-hero-kicker">Plataforma clínica integral</p>
+              <h1>Bienvenido a CliniCore</h1>
               <p>
-                StarMOT unifica desarrollo, control y administración en una sola plataforma para equipos que construyen software con visión y precisión.
+                Gestiona atención, agenda, pacientes y control operativo desde un entorno único, seguro y preparado para crecer.
               </p>
+              <ul className="login-hero-points" aria-label="Beneficios de la plataforma">
+                <li><FiShield aria-hidden="true" />Seguridad por roles y auditoría activa</li>
+                <li><FiMail aria-hidden="true" />Operación centralizada por sede y equipo</li>
+                <li><FiLock aria-hidden="true" />Acceso seguro con sesión protegida</li>
+              </ul>
             </div>
           </aside>
 
           <article className="login-card">
-            <div className="brand">
+            <div className="brand" aria-label="Marca CliniCore">
               <div className="login-brand-logo">
-                <Image src="/logo.png" alt="Logo StarMOT" width={92} height={92} />
+                <Image src="/logo-clinicore.png" alt="Logo CliniCore" width={92} height={92} />
               </div>
-              <p className="brand-kicker">StarMOT</p>
+              <p className="brand-kicker">CliniCore</p>
               <h2>Iniciar sesión</h2>
+              <p className="brand-copy">Ingresa con tu cuenta para acceder al panel asignado.</p>
             </div>
 
             <form onSubmit={handleSubmit} className="login-form" noValidate>
