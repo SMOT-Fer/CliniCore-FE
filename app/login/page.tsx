@@ -14,6 +14,12 @@ const API_ME = `${API_BASE}/usuarios/me`;
 const API_REFRESH = `${API_BASE}/usuarios/refresh`;
 const API_CSRF = `${API_BASE}/usuarios/csrf`;
 
+function resolveAllowedRedirectPath(path?: string | null) {
+  if (!path || typeof path !== 'string') return null;
+  if (path === '/superadmin' || path.startsWith('/superadmin/')) return '/';
+  return path;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -47,7 +53,7 @@ export default function LoginPage() {
         const response = await fetch(API_ME, { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
-          const redirectPath = data.data?.redirect_path;
+          const redirectPath = resolveAllowedRedirectPath(data.data?.redirect_path);
           if (redirectPath) {
             router.push(redirectPath);
             return;
@@ -67,7 +73,7 @@ export default function LoginPage() {
             const meResponse = await fetch(API_ME, { credentials: 'include' });
             if (meResponse.ok) {
               const data = await meResponse.json();
-              const redirectPath = data.data?.redirect_path;
+              const redirectPath = resolveAllowedRedirectPath(data.data?.redirect_path);
               if (redirectPath) {
                 router.push(redirectPath);
                 return;
@@ -133,8 +139,9 @@ export default function LoginPage() {
       // Transición
       setIsExiting(true);
       setTimeout(() => {
-        if (data.data?.redirect_path) {
-          router.push(data.data.redirect_path);
+        const redirectPath = resolveAllowedRedirectPath(data.data?.redirect_path);
+        if (redirectPath) {
+          router.push(redirectPath);
         } else {
           setMessage('Tu rol aun no tiene interfaz asignada.');
           setMessageType('error');
@@ -213,7 +220,7 @@ export default function LoginPage() {
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="correo@empresa.com"
+                  placeholder="correo@clinica.com"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

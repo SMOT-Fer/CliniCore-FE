@@ -1,8 +1,49 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020814;
-  --foreground: #eaf2ff;
+  --background: #eef5ff;
+  --foreground: #12233f;
+  --ui-foreground: #12233f;
+  --ui-muted: #5e7396;
+  --ui-accent: #2358f5;
+  --ui-accent-strong: #103fcb;
+  --ui-accent-soft: rgba(35, 88, 245, 0.14);
+  --ui-border: rgba(26, 78, 184, 0.14);
+  --ui-panel: rgba(255, 255, 255, 0.82);
+  --ui-surface: rgba(255, 255, 255, 0.64);
+  --ui-surface-strong: rgba(239, 246, 255, 0.92);
+  --ui-card: rgba(255, 255, 255, 0.92);
+  --ui-danger: #c24159;
+  --ui-warning: #c68b14;
+  --ui-success: #15946a;
+  --ui-shadow: 0 28px 80px -38px rgba(23, 64, 148, 0.42);
+  --app-bg:
+    radial-gradient(circle at 10% 18%, rgba(35, 88, 245, 0.16), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(46, 176, 222, 0.18), transparent 26%),
+    linear-gradient(180deg, #f5f8ff 0%, #edf4ff 48%, #eaf1fb 100%);
+}
+
+html[data-theme='dark'] {
+  --background: #07111f;
+  --foreground: #ebf3ff;
+  --ui-foreground: #ebf3ff;
+  --ui-muted: #93a6c7;
+  --ui-accent: #49b4ff;
+  --ui-accent-strong: #1d8fe0;
+  --ui-accent-soft: rgba(73, 180, 255, 0.16);
+  --ui-border: rgba(103, 145, 214, 0.18);
+  --ui-panel: rgba(7, 17, 31, 0.82);
+  --ui-surface: rgba(12, 24, 42, 0.74);
+  --ui-surface-strong: rgba(16, 33, 58, 0.96);
+  --ui-card: rgba(10, 21, 37, 0.94);
+  --ui-danger: #f06c87;
+  --ui-warning: #ffca63;
+  --ui-success: #2cc69a;
+  --ui-shadow: 0 28px 80px -34px rgba(0, 0, 0, 0.58);
+  --app-bg:
+    radial-gradient(circle at 14% 10%, rgba(53, 110, 247, 0.22), transparent 28%),
+    radial-gradient(circle at 90% 14%, rgba(23, 178, 221, 0.18), transparent 24%),
+    linear-gradient(180deg, #07111f 0%, #0b1730 54%, #112548 100%);
 }
 
 @theme inline {
@@ -12,12 +53,38 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html,
 body {
-  background:
-    radial-gradient(circle at 88% 100%, rgba(46, 98, 214, 0.38), transparent 42%),
-    radial-gradient(circle at 12% 8%, rgba(18, 71, 190, 0.22), transparent 40%),
-    linear-gradient(160deg, #020814 0%, #031736 55%, #0a2a64 100%);
+  min-height: 100%;
+}
+
+body {
+  background: var(--app-bg);
   background-attachment: fixed;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease,
+    opacity 220ms ease;
 }

@@ -15,7 +15,7 @@ export default function MarketingFooter() {
       <div className="landing-footer-columns">
         <div><h4>Inicio</h4><Link href="/">Resumen</Link><Link href="/login">Iniciar sesión</Link></div>
         <div><h4>Producto</h4><Link href="/funcionalidades">Funcionalidades</Link><Link href="/planes">Planes</Link></div>
-        <div><h4>Empresa</h4><Link href="/contacto">Contacto</Link><Link href="/contacto">Empieza gratis</Link></div>
+        <div><h4>Clinica</h4><Link href="/contacto">Contacto</Link><Link href="/contacto">Empieza gratis</Link></div>
         <div><h4>Acceso</h4><Link href="/login">Iniciar sesión</Link><Link href="/funcionalidades">Ver funcionalidades</Link></div>
       </div>
 

@@ -68,14 +68,13 @@ Si falta `BACKEND_API_URL` en producción, el proxy `/api/backend/*` responderá
 - **Sesión:** Cookies httpOnly con JWT (Bearer token)
 - **CSRF:** Protección con token CSRF en header `x-csrf-token`
 - **Refresh:** Renovación automática de token antes de expirar
-- **Redirect:** Usuarios autenticados se redirigen a `/superadmin`
+- **Redirect:** Usuarios autenticados se redirigen a su ruta asignada (`/clinica/[clinica]`) o al inicio (`/`)
 
 ## 📝 Estado de componentes
 
 | Componente | Estado | Notas |
 |-----------|--------|-------|
 | Login | ✅ Migrado | React hooks + API integration |
-| Superadmin | ⏳ Pendiente | Requiere migración HTML/JS |
 | Dashboard | ⏳ Pendiente | Nuevo componente |
 
 ## 🛠️ Stack Tecnológico
