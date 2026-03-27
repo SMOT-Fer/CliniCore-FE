@@ -14,6 +14,14 @@ const API_ME = `${API_BASE}/usuarios/me`;
 const API_REFRESH = `${API_BASE}/usuarios/refresh`;
 const API_CSRF = `${API_BASE}/usuarios/csrf`;
 
+async function parseJsonSafe(response: Response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 function resolveAllowedRedirectPath(path?: string | null) {
   if (!path || typeof path !== 'string') return null;
   if (path === '/superadmin' || path.startsWith('/superadmin/')) return '/';
@@ -43,6 +51,44 @@ export default function LoginPage() {
     }, 420);
   };
 
+  const resolveSessionRedirect = async () => {
+    const meResponse = await fetch(API_ME, { credentials: 'include' });
+    if (meResponse.ok) {
+      const meData = await parseJsonSafe(meResponse);
+      return resolveAllowedRedirectPath(meData?.data?.redirect_path);
+    }
+
+    if (meResponse.status !== 401) {
+      return null;
+    }
+
+    const refreshResponse = await fetch(API_REFRESH, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!refreshResponse.ok) {
+      return null;
+    }
+
+    // Some browsers may apply Set-Cookie slightly after refresh resolves.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+
+      const retryMeResponse = await fetch(API_ME, { credentials: 'include' });
+      if (!retryMeResponse.ok) {
+        continue;
+      }
+
+      const retryMeData = await parseJsonSafe(retryMeResponse);
+      return resolveAllowedRedirectPath(retryMeData?.data?.redirect_path);
+    }
+
+    return null;
+  };
+
   // Validar sesión activa al cargar
   useEffect(() => {
     if (hasCheckedSessionRef.current) return;
@@ -50,36 +96,10 @@ export default function LoginPage() {
 
     const checkSession = async () => {
       try {
-        const response = await fetch(API_ME, { credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
-          const redirectPath = resolveAllowedRedirectPath(data.data?.redirect_path);
-          if (redirectPath) {
-            router.push(redirectPath);
-            return;
-          }
-          setMessage('Tu rol aun no tiene interfaz asignada.');
-          setMessageType('error');
+        const redirectPath = await resolveSessionRedirect();
+        if (redirectPath) {
+          router.push(redirectPath);
           return;
-        }
-
-        if (response.status === 401) {
-          const refreshResponse = await fetch(API_REFRESH, {
-            method: 'POST',
-            credentials: 'include'
-          });
-
-          if (refreshResponse.ok) {
-            const meResponse = await fetch(API_ME, { credentials: 'include' });
-            if (meResponse.ok) {
-              const data = await meResponse.json();
-              const redirectPath = resolveAllowedRedirectPath(data.data?.redirect_path);
-              if (redirectPath) {
-                router.push(redirectPath);
-                return;
-              }
-            }
-          }
         }
       } catch {
         // Silencioso si hay error
@@ -107,22 +127,22 @@ export default function LoginPage() {
       // Asegurar CSRF token
       await ensureCsrfToken();
 
-      const response = await fetch(API_LOGIN, {
+      const loginResponse = await fetch(API_LOGIN, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          email: email.trim().toUpperCase(),
+          email: email.trim(),
           password
         })
       });
 
-      const data = await response.json();
+      const loginData: any = await parseJsonSafe(loginResponse);
 
-      if (!response.ok) {
-        setMessage(data.error || 'Error al iniciar sesión');
+      if (!loginResponse || !loginResponse.ok) {
+        setMessage(loginData?.error || 'Error al iniciar sesión');
         setMessageType('error');
         setIsLoading(false);
         return;
@@ -132,20 +152,21 @@ export default function LoginPage() {
       setMessageType('success');
 
       // Guardar session ID en localStorage para identificar la sesión actual
-      if (data.data?.sessionId) {
-        localStorage.setItem('sessionId', data.data.sessionId);
+      if (loginData?.data?.sessionId) {
+        localStorage.setItem('sessionId', loginData.data.sessionId);
       }
 
       // Transición
       setIsExiting(true);
       setTimeout(() => {
-        const redirectPath = resolveAllowedRedirectPath(data.data?.redirect_path);
+        const redirectPath = resolveAllowedRedirectPath(loginData?.data?.redirect_path);
         if (redirectPath) {
           router.push(redirectPath);
         } else {
           setMessage('Tu rol aun no tiene interfaz asignada.');
           setMessageType('error');
           setIsExiting(false);
+          setIsLoading(false);
         }
       }, 480);
     } catch {

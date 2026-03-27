@@ -24,26 +24,26 @@
 }
 
 html[data-theme='dark'] {
-  --background: #07111f;
+  --background: #040608;
   --foreground: #ebf3ff;
   --ui-foreground: #ebf3ff;
-  --ui-muted: #93a6c7;
+  --ui-muted: #98a8bf;
   --ui-accent: #49b4ff;
   --ui-accent-strong: #1d8fe0;
-  --ui-accent-soft: rgba(73, 180, 255, 0.16);
-  --ui-border: rgba(103, 145, 214, 0.18);
-  --ui-panel: rgba(7, 17, 31, 0.82);
-  --ui-surface: rgba(12, 24, 42, 0.74);
-  --ui-surface-strong: rgba(16, 33, 58, 0.96);
-  --ui-card: rgba(10, 21, 37, 0.94);
+  --ui-accent-soft: rgba(73, 180, 255, 0.14);
+  --ui-border: rgba(110, 150, 216, 0.14);
+  --ui-panel: rgba(11, 15, 21, 0.84);
+  --ui-surface: rgba(17, 22, 29, 0.82);
+  --ui-surface-strong: rgba(22, 29, 39, 0.94);
+  --ui-card: rgba(14, 19, 25, 0.92);
   --ui-danger: #f06c87;
   --ui-warning: #ffca63;
   --ui-success: #2cc69a;
-  --ui-shadow: 0 28px 80px -34px rgba(0, 0, 0, 0.58);
+  --ui-shadow: 0 28px 80px -34px rgba(0, 0, 0, 0.64);
   --app-bg:
-    radial-gradient(circle at 14% 10%, rgba(53, 110, 247, 0.22), transparent 28%),
-    radial-gradient(circle at 90% 14%, rgba(23, 178, 221, 0.18), transparent 24%),
-    linear-gradient(180deg, #07111f 0%, #0b1730 54%, #112548 100%);
+    radial-gradient(circle at 14% 10%, rgba(53, 110, 247, 0.12), transparent 26%),
+    radial-gradient(circle at 90% 14%, rgba(23, 178, 221, 0.1), transparent 22%),
+    linear-gradient(180deg, #040608 0%, #070b10 58%, #0b1017 100%);
 }
 
 @theme inline {
