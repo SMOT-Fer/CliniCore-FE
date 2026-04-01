@@ -414,6 +414,11 @@ export default function SuperadminDashboardClient() {
     [suscripciones, selectedClinicaId]
   );
 
+  const selectedPlan = useMemo(
+    () => planes.find((plan) => plan.id === selectedSuscripcion?.plan_id) || null,
+    [planes, selectedSuscripcion]
+  );
+
   const usuariosPorClinica = useMemo(() => {
     if (!selectedClinicaId) return [];
     return usuarios.filter((u) => u.clinica_id === selectedClinicaId);
@@ -668,6 +673,11 @@ export default function SuperadminDashboardClient() {
     });
     loadHistorialClinica(selectedClinica.id).catch(() => setHistorialClinica([]));
   }, [loadHistorialClinica, selectedClinica]);
+
+  useEffect(() => {
+    if (!selectedClinicaId) return;
+    setAssignPlanForm((prev) => ({ ...prev, clinica_id: selectedClinicaId }));
+  }, [selectedClinicaId]);
 
   const refreshData = useCallback(async () => {
     setIsRefreshing(true);
@@ -1182,7 +1192,7 @@ export default function SuperadminDashboardClient() {
   if (!session) return null;
 
   return (
-    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--ui-foreground)]">
+    <div className="superadmin-shell min-h-screen bg-[var(--app-bg)] text-[var(--ui-foreground)]">
       <div className="mx-auto flex min-h-screen w-full max-w-[1680px] gap-6 px-4 py-4 sm:px-6 lg:px-8">
         <aside className="hidden w-[300px] shrink-0 lg:block">
           <div className="sticky top-4 flex min-h-[calc(100vh-2rem)] flex-col rounded-[36px] border border-[var(--ui-border)] bg-[var(--ui-panel)] p-5 shadow-[var(--ui-shadow)] backdrop-blur">
@@ -1663,7 +1673,21 @@ export default function SuperadminDashboardClient() {
                       <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
                         <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Suscripción vigente</p>
                         <p className="mt-2 font-semibold">{selectedSuscripcion?.plan_nombre || selectedSuscripcion?.plan_codigo || 'Sin plan activo'}</p>
+                        <p className="mt-1 text-xs text-[var(--ui-muted)]">Estado: {selectedSuscripcion?.suscripcion_estado || 'Sin estado'}</p>
                         <p className="mt-1 text-xs text-[var(--ui-muted)]">Vence: {formatDate(selectedSuscripcion?.periodo_actual_fin)}</p>
+                        <p className="mt-1 text-xs text-[var(--ui-muted)]">Trial hasta: {formatDate(selectedSuscripcion?.trial_ends_at)}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Usuarios / Capacidad</p>
+                          <p className="mt-2 text-sm font-semibold">
+                            {usuariosPorClinica.length} / {selectedPlan?.max_usuarios ?? 'Ilimitado'}
+                          </p>
+                        </div>
+                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Storage (GB)</p>
+                          <p className="mt-2 text-sm font-semibold">{selectedPlan?.max_storage_gb ?? 'Ilimitado'}</p>
+                        </div>
                       </div>
                       {historialClinica.length === 0 && (
                         <div className="inline-flex items-center gap-2 rounded-[16px] border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-[var(--ui-warning)]">
@@ -1700,6 +1724,37 @@ export default function SuperadminDashboardClient() {
                   </Surface>
                 </section>
 
+                <Surface eyebrow="Suscripción" title="Gestionar suscripción de esta clínica" description="Cambia plan y estado sin salir del detalle.">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={assignPlanForm.plan_id} onChange={(e) => setAssignPlanForm((p) => ({ ...p, plan_id: e.target.value }))}>
+                      <option value="">Selecciona plan</option>
+                      {planes.filter((plan) => plan.estado === 'ACTIVO').map((plan) => (
+                        <option key={plan.id} value={plan.id}>{plan.nombre} ({plan.codigo})</option>
+                      ))}
+                    </select>
+                    <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={assignPlanForm.estado} onChange={(e) => setAssignPlanForm((p) => ({ ...p, estado: e.target.value as typeof p.estado }))}>
+                      <option value="TRIAL">TRIAL</option>
+                      <option value="ACTIVA">ACTIVA</option>
+                      <option value="PAST_DUE">PAST_DUE</option>
+                      <option value="SUSPENDIDA">SUSPENDIDA</option>
+                      <option value="CANCELADA">CANCELADA</option>
+                      <option value="EXPIRADA">EXPIRADA</option>
+                    </select>
+                    <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Duración en días" value={assignPlanForm.duracion_dias} onChange={(e) => setAssignPlanForm((p) => ({ ...p, duracion_dias: e.target.value.replace(/\D/g, '').slice(0, 3) }))} />
+                    <button type="button" onClick={handleAssignPlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
+                      Guardar suscripción
+                    </button>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button type="button" onClick={() => setSection('suscripciones')} className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)]">
+                      Ir a módulo de suscripciones
+                    </button>
+                    <button type="button" onClick={() => setSection('usuarios')} className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)]">
+                      Ir a módulo de usuarios
+                    </button>
+                  </div>
+                </Surface>
+
                 <Surface eyebrow="Administradores" title={`Admins de ${selectedClinica.nombre}`} description="Gestiona los administradores vinculados a esta clínica.">
                   <div className="grid gap-6 xl:grid-cols-2">
                     <div>
@@ -1726,6 +1781,35 @@ export default function SuperadminDashboardClient() {
                       <button type="button" onClick={handleCreateAdmin} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">Crear ADMIN</button>
                     </div>
                   </div>
+                </Surface>
+
+                <Surface eyebrow="Usuarios" title={`Usuarios de ${selectedClinica.nombre}`} description="Visualiza y gestiona todos los usuarios vinculados a esta clínica.">
+                  {usuariosPorClinica.length === 0 && <p className="text-sm text-[var(--ui-muted)]">No hay usuarios asociados a esta clínica.</p>}
+                  {usuariosPorClinica.length > 0 && (
+                    <div className="space-y-3">
+                      {usuariosPorClinica.map((user) => (
+                        <article key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-[var(--ui-card)] px-4 py-3">
+                          <div>
+                            <p className="font-semibold text-[var(--ui-foreground)]">{user.email}</p>
+                            <p className="text-xs text-[var(--ui-muted)]">Rol: {user.rol} • Estado: {user.estado}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => startEditUser(user)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Editar usuario">
+                              <FiEdit2 size={14} />
+                            </button>
+                            <button type="button" onClick={() => handleToggleUsuario(user)} className="rounded-full bg-[var(--ui-warning)] p-2 text-white" aria-label="Activar o desactivar usuario">
+                              <FiUser size={14} />
+                            </button>
+                            {user.rol !== 'SUPERADMIN' && (
+                              <button type="button" onClick={() => handleDeleteUser(user)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white" aria-label="Eliminar usuario">
+                                <FiTrash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </Surface>
 
                 {historialClinica.length > 0 && (
@@ -2044,6 +2128,23 @@ export default function SuperadminDashboardClient() {
         </div>
       </div>
 
+      <style jsx global>{`
+        .superadmin-shell button:not(:disabled) {
+          cursor: pointer;
+          transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+        }
+
+        .superadmin-shell button:not(:disabled):hover {
+          transform: translateY(-1px);
+          filter: saturate(1.08);
+          box-shadow: 0 14px 26px -18px rgba(15, 23, 42, 0.75);
+        }
+
+        .superadmin-shell button:focus-visible {
+          outline: 2px solid var(--ui-accent);
+          outline-offset: 2px;
+        }
+      `}</style>
     </div>
   );
 }
