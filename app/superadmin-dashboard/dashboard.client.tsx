@@ -757,8 +757,7 @@ export default function SuperadminDashboardClient() {
           body: JSON.stringify({
             clinica_id: nuevaClinicaId,
             plan_id: createClinica.plan_id,
-            estado: createClinica.suscripcion_estado,
-            duracion_dias: Number(createClinica.duracion_dias || '14')
+            estado: createClinica.suscripcion_estado
           })
         });
 
@@ -895,8 +894,7 @@ export default function SuperadminDashboardClient() {
         body: JSON.stringify({
           clinica_id: assignPlanForm.clinica_id,
           plan_id: assignPlanForm.plan_id,
-          estado: assignPlanForm.estado,
-          duracion_dias: Number(assignPlanForm.duracion_dias || '14')
+          estado: assignPlanForm.estado
         })
       });
 
@@ -1612,10 +1610,11 @@ export default function SuperadminDashboardClient() {
                               <option value="EXPIRADA">EXPIRADA</option>
                             </select>
                           </label>
-                          <label className="grid gap-2 text-sm">
-                            <span className="text-[var(--ui-muted)]">Duración (días)</span>
-                            <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3" placeholder="14" value={createClinica.duracion_dias} onChange={(e) => setCreateClinica((p) => ({ ...p, duracion_dias: e.target.value.replace(/\D/g, '').slice(0, 3) }))} />
-                          </label>
+                          <div className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+                            <p className="font-semibold text-[var(--ui-foreground)]">Duración automática</p>
+                            <p className="mt-1">TRIAL: 14 días exactos.</p>
+                            <p>No TRIAL: 1 mes calendario exacto (ejemplo: 15 Ene → 15 Feb).</p>
+                          </div>
                         </div>
                       </div>
                     </Surface>
@@ -1740,7 +1739,9 @@ export default function SuperadminDashboardClient() {
                       <option value="CANCELADA">CANCELADA</option>
                       <option value="EXPIRADA">EXPIRADA</option>
                     </select>
-                    <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Duración en días" value={assignPlanForm.duracion_dias} onChange={(e) => setAssignPlanForm((p) => ({ ...p, duracion_dias: e.target.value.replace(/\D/g, '').slice(0, 3) }))} />
+                    <div className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-xs text-[var(--ui-muted)]">
+                      TRIAL: 14 días. Otros estados: 1 mes calendario exacto.
+                    </div>
                     <button type="button" onClick={handleAssignPlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
                       Guardar suscripción
                     </button>
@@ -1860,7 +1861,9 @@ export default function SuperadminDashboardClient() {
                           <option value="CANCELADA">CANCELADA</option>
                           <option value="EXPIRADA">EXPIRADA</option>
                         </select>
-                        <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Duración en días" value={assignPlanForm.duracion_dias} onChange={(e) => setAssignPlanForm((p) => ({ ...p, duracion_dias: e.target.value.replace(/\D/g, '').slice(0, 3) }))} />
+                        <div className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-xs text-[var(--ui-muted)]">
+                          TRIAL: 14 días. Otros estados: 1 mes calendario exacto.
+                        </div>
                         <button type="button" onClick={handleAssignPlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">Guardar suscripción</button>
                       </div>
                     </div>
