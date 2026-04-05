@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { FiArrowLeft, FiLock, FiMail, FiMoon, FiShield, FiSun } from 'react-icons/fi';
-import { useThemeMode } from '../hooks/use-theme-mode';
+import { FiArrowLeft, FiLock, FiMail, FiShield } from 'react-icons/fi';
 import '../css/login.css';
 
 const API_BASE = '/api/backend';
@@ -37,9 +36,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const hasCheckedSessionRef = useRef(false);
-  const { themeMode, resolvedTheme, setThemeMode } = useThemeMode();
-  const isLightActive = themeMode === 'light' || (themeMode === 'system' && resolvedTheme === 'light');
-  const isDarkActive = themeMode === 'dark' || (themeMode === 'system' && resolvedTheme === 'dark');
 
   const handleGoHome = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -185,28 +181,6 @@ export default function LoginPage() {
           <span>Volver al inicio</span>
         </Link>
 
-        <div className="login-theme-toggle" role="group" aria-label="Seleccionar tema">
-          <button
-            type="button"
-            className={`login-theme-btn ${isLightActive ? 'is-active' : ''}`}
-            suppressHydrationWarning
-            onClick={() => setThemeMode('light')}
-            aria-label="Modo claro"
-            title="Modo claro"
-          >
-            <FiSun />
-          </button>
-          <button
-            type="button"
-            className={`login-theme-btn ${isDarkActive ? 'is-active' : ''}`}
-            suppressHydrationWarning
-            onClick={() => setThemeMode('dark')}
-            aria-label="Modo oscuro"
-            title="Modo oscuro"
-          >
-            <FiMoon />
-          </button>
-        </div>
 
         <section className="login-shell">
           <aside className="login-hero" aria-label="Resumen de plataforma">

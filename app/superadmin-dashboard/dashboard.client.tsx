@@ -55,6 +55,12 @@ type Usuario = {
   estado: 'ACTIVO' | 'INACTIVO';
   clinica_id?: string | null;
   persona_id?: string | null;
+  dni?: string | null;
+  nombres?: string | null;
+  apellido_paterno?: string | null;
+  apellido_materno?: string | null;
+  sexo?: string | null;
+  fecha_nacimiento?: string | null;
   ultimo_login_at?: string | null;
   created_at?: string;
 };
@@ -84,15 +90,24 @@ type TipoNegocio = {
   nombre: string;
 };
 
+type SuscripcionEstado = 'TRIAL' | 'ACTIVA' | 'PAST_DUE' | 'SUSPENDIDA' | 'CANCELADA' | 'EXPIRADA';
+
 type SuscripcionVigente = {
+  id?: string;
   suscripcion_id: string;
   clinica_id: string;
-  suscripcion_estado: 'TRIAL' | 'ACTIVA' | 'PAST_DUE' | 'SUSPENDIDA' | 'CANCELADA' | 'EXPIRADA';
+  empresa_id?: string | null;
+  suscripcion_estado: SuscripcionEstado;
+  estado?: SuscripcionEstado;
   plan_id: string;
   plan_codigo?: string;
   plan_nombre?: string;
   periodo_actual_fin?: string;
   trial_ends_at?: string;
+  max_usuarios?: number | null;
+  max_storage_gb?: number | null;
+  moneda?: string;
+  precio_mensual?: number | null;
 };
 
 type SuscripcionHistorial = {
@@ -149,12 +164,29 @@ type PlanFormState = {
   estado: 'ACTIVO' | 'INACTIVO';
 };
 
+type PersonaData = {
+  id: string;
+  dni?: string | null;
+  nombres?: string | null;
+  apellido_paterno?: string | null;
+  apellido_materno?: string | null;
+  sexo?: string | null;
+  fecha_nacimiento?: string | null;
+};
+
 type UserEditState = {
   id: string;
   email: string;
   rol: Usuario['rol'];
   estado: 'ACTIVO' | 'INACTIVO';
   clinica_id: string;
+  persona_id?: string | null;
+  dni: string;
+  nombres: string;
+  apellido_paterno: string;
+  apellido_materno: string;
+  sexo?: string;
+  fecha_nacimiento?: string;
   password: string;
 };
 
@@ -177,6 +209,32 @@ const INITIAL_PLAN_FORM: PlanFormState = {
 };
 
 const CLINICAS_PAGE_SIZE = 3;
+const OFFICIAL_PLAN_CODES = ['TRIAL_CLINICA', 'BASIC_CLINICA', 'PRO_CLINICA', 'ENTERPRISE_CLINICA'] as const;
+const ACTIVE_LICENSE_STATUSES: SuscripcionEstado[] = ['TRIAL', 'ACTIVA', 'PAST_DUE'];
+
+function normalizeSuscripcionVigente(raw: Partial<SuscripcionVigente> & { id?: string; estado?: string; empresa_id?: string | null }): SuscripcionVigente {
+  const clinicaId = String(raw.clinica_id || raw.empresa_id || '').trim();
+  const estado = String(raw.suscripcion_estado || raw.estado || 'EXPIRADA').trim().toUpperCase() as SuscripcionEstado;
+
+  return {
+    ...raw,
+    id: raw.id,
+    suscripcion_id: String(raw.suscripcion_id || raw.id || '').trim(),
+    clinica_id: clinicaId,
+    empresa_id: raw.empresa_id ?? clinicaId,
+    suscripcion_estado: estado,
+    estado,
+    plan_id: String(raw.plan_id || '').trim(),
+    plan_codigo: raw.plan_codigo,
+    plan_nombre: raw.plan_nombre,
+    periodo_actual_fin: raw.periodo_actual_fin,
+    trial_ends_at: raw.trial_ends_at,
+    max_usuarios: raw.max_usuarios ?? null,
+    max_storage_gb: raw.max_storage_gb ?? null,
+    moneda: raw.moneda,
+    precio_mensual: raw.precio_mensual ?? null
+  };
+}
 
 class SessionInvalidError extends Error {
   constructor(message = 'Sesion invalida') {
@@ -210,6 +268,15 @@ function formatDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'No definido';
   return new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium' }).format(date);
+}
+
+function getPersonaNombre(persona?: Partial<PersonaData> | null) {
+  const fullName = [persona?.nombres, persona?.apellido_paterno, persona?.apellido_materno]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  return fullName || 'Datos personales no disponibles';
 }
 
 function toNumberOrNull(value: string) {
@@ -387,8 +454,11 @@ export default function SuperadminDashboardClient() {
   const [adminForm, setAdminForm] = useState({
     email: '',
     dni: '',
-    password: ''
+    password: '',
+    rol: 'ADMIN' as 'ADMIN' | 'DOCTOR' | 'STAFF'
   });
+  const [createPersonaPreview, setCreatePersonaPreview] = useState<PersonaData | null>(null);
+  const [personasById, setPersonasById] = useState<Record<string, PersonaData>>({});
 
   const [assignPlanForm, setAssignPlanForm] = useState({
     clinica_id: '',
@@ -399,10 +469,15 @@ export default function SuperadminDashboardClient() {
 
   const [planForm, setPlanForm] = useState<PlanFormState>(INITIAL_PLAN_FORM);
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [showPlanEditor, setShowPlanEditor] = useState(false);
 
   const [editingUser, setEditingUser] = useState<UserEditState | null>(null);
   const [tipoForm, setTipoForm] = useState({ codigo: '', nombre: '' });
   const [editingTipoId, setEditingTipoId] = useState<string | null>(null);
+  const [showTipoEditor, setShowTipoEditor] = useState(false);
+  const [isEditingClinica, setIsEditingClinica] = useState(false);
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
+  const [userEditorMode, setUserEditorMode] = useState<'create' | 'edit' | null>(null);
 
   const selectedClinica = useMemo(
     () => clinicas.find((c) => c.id === selectedClinicaId) || null,
@@ -415,7 +490,12 @@ export default function SuperadminDashboardClient() {
   );
 
   const selectedPlan = useMemo(
-    () => planes.find((plan) => plan.id === selectedSuscripcion?.plan_id) || null,
+    () =>
+      planes.find(
+        (plan) =>
+          plan.id === selectedSuscripcion?.plan_id ||
+          (selectedSuscripcion?.plan_codigo && plan.codigo === selectedSuscripcion.plan_codigo)
+      ) || null,
     [planes, selectedSuscripcion]
   );
 
@@ -429,6 +509,55 @@ export default function SuperadminDashboardClient() {
     [usuariosPorClinica]
   );
 
+  useEffect(() => {
+    const missingPersonaIds = Array.from(
+      new Set(
+        usuariosPorClinica
+          .map((user) => user.persona_id)
+          .filter((personaId): personaId is string => Boolean(personaId && !personasById[personaId]))
+      )
+    );
+
+    if (missingPersonaIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMissingPersonas = async () => {
+      const results = await Promise.all(
+        missingPersonaIds.map(async (personaId) => {
+          try {
+            const res = await fetch(`/api/backend/personas/${personaId}`, { credentials: 'include' });
+            const payload = await res.json().catch(() => null);
+            if (!res.ok || !payload?.data?.id) return null;
+            return [personaId, payload.data as PersonaData] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      setPersonasById((prev) => {
+        const next = { ...prev };
+        results.forEach((entry) => {
+          if (entry) {
+            next[entry[0]] = entry[1];
+          }
+        });
+        return next;
+      });
+    };
+
+    loadMissingPersonas().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [personasById, usuariosPorClinica]);
+
   const totalClinicaPages = useMemo(
     () => Math.max(1, Math.ceil(clinicas.length / CLINICAS_PAGE_SIZE)),
     [clinicas.length]
@@ -439,10 +568,14 @@ export default function SuperadminDashboardClient() {
     return clinicas.slice(start, start + CLINICAS_PAGE_SIZE);
   }, [clinicas, clinicasPage]);
 
+  const totalClinicasRegistradas = useMemo(() => clinicas.length, [clinicas]);
+
   const totalClinicasActivas = useMemo(
     () => clinicas.filter((clinica) => clinica.estado === 'ACTIVA').length,
     [clinicas]
   );
+
+  const totalUsuariosRegistrados = useMemo(() => usuarios.length, [usuarios]);
 
   const totalUsuariosActivos = useMemo(
     () => usuarios.filter((usuario) => usuario.estado === 'ACTIVO').length,
@@ -465,18 +598,14 @@ export default function SuperadminDashboardClient() {
   );
 
   const porcentajeClinicasActivas = useMemo(() => {
-    const total = dashboardSummary?.clinicasTotal ?? clinicas.length;
-    const activas = dashboardSummary?.clinicasActivas ?? totalClinicasActivas;
-    if (total <= 0) return 0;
-    return Math.round((activas / total) * 100);
-  }, [clinicas.length, dashboardSummary, totalClinicasActivas]);
+    if (totalClinicasRegistradas <= 0) return 0;
+    return Math.round((totalClinicasActivas / totalClinicasRegistradas) * 100);
+  }, [totalClinicasActivas, totalClinicasRegistradas]);
 
   const porcentajeUsuariosActivos = useMemo(() => {
-    const total = dashboardSummary?.usuariosTotal ?? usuarios.length;
-    const activos = dashboardSummary?.usuariosActivos ?? totalUsuariosActivos;
-    if (total <= 0) return 0;
-    return Math.round((activos / total) * 100);
-  }, [dashboardSummary, totalUsuariosActivos, usuarios.length]);
+    if (totalUsuariosRegistrados <= 0) return 0;
+    return Math.round((totalUsuariosActivos / totalUsuariosRegistrados) * 100);
+  }, [totalUsuariosActivos, totalUsuariosRegistrados]);
 
   const clinicasSummaryItems = useMemo(
     () => clinicas.slice(0, 10).map((clinica) => `${clinica.nombre} • ${clinica.estado}`),
@@ -484,8 +613,8 @@ export default function SuperadminDashboardClient() {
   );
 
   const usuariosSummaryItems = useMemo(
-    () => (dashboardSummary?.usuariosActivosNombres || usuarios.filter((usuario) => usuario.estado === 'ACTIVO').map((usuario) => usuario.email)).slice(0, 10),
-    [dashboardSummary, usuarios]
+    () => usuarios.filter((usuario) => usuario.estado === 'ACTIVO').map((usuario) => usuario.email).slice(0, 10),
+    [usuarios]
   );
 
   const sesionesSummaryItems = useMemo(
@@ -499,17 +628,51 @@ export default function SuperadminDashboardClient() {
     [activeSessions, clinicas]
   );
 
-  const planesSummaryItems = useMemo(
+  const availableLicensePlans = useMemo(() => {
+    const official = OFFICIAL_PLAN_CODES
+      .map((code) => planes.find((plan) => plan.codigo === code && plan.estado === 'ACTIVO'))
+      .filter(Boolean) as Plan[];
+
+    return official.length > 0 ? official : planes.filter((plan) => plan.estado === 'ACTIVO');
+  }, [planes]);
+
+  const licenciasVigentes = useMemo(
+    () => suscripciones.filter((suscripcion) => ACTIVE_LICENSE_STATUSES.includes(suscripcion.suscripcion_estado) && Boolean(suscripcion.clinica_id)),
+    [suscripciones]
+  );
+
+  const clinicasConLicenciaActiva = useMemo(
+    () => new Set(licenciasVigentes.map((suscripcion) => suscripcion.clinica_id)).size,
+    [licenciasVigentes]
+  );
+
+  const licenciasActivasSummaryItems = useMemo(
+    () => licenciasVigentes
+      .map((suscripcion) => {
+        const clinica = clinicas.find((item) => item.id === suscripcion.clinica_id);
+        return `${clinica?.nombre || 'Clínica'} • ${suscripcion.plan_nombre || suscripcion.plan_codigo || 'Sin plan'} • ${suscripcion.suscripcion_estado}`;
+      })
+      .slice(0, 10),
+    [clinicas, licenciasVigentes]
+  );
+
+  const subscriptionPlanSummaries = useMemo(
     () => planes.map((plan) => {
-      const totalClinicasPlan = suscripciones.filter((suscripcion) => suscripcion.plan_id === plan.id).length;
-      return `${plan.nombre} • ${totalClinicasPlan} clinicas`;
+      const activeClinicas = licenciasVigentes.filter((suscripcion) => suscripcion.plan_id === plan.id || suscripcion.plan_codigo === plan.codigo);
+      const clinicaNames = Array.from(new Set(activeClinicas.map((suscripcion) => clinicas.find((item) => item.id === suscripcion.clinica_id)?.nombre || 'Clínica')));
+
+      return {
+        plan,
+        totalClinicas: clinicaNames.length,
+        clinicaNames: clinicaNames.slice(0, 4)
+      };
     }),
-    [planes, suscripciones]
+    [clinicas, licenciasVigentes, planes]
   );
 
   const planesActivos = useMemo(
-    () => planes.filter((plan) => plan.estado === 'ACTIVO').length,
-    [planes]
+    () => availableLicensePlans.filter((plan) => plan.estado === 'ACTIVO').length,
+    [availableLicensePlans]
   );
 
   const usuariosInactivos = useMemo(
@@ -518,8 +681,8 @@ export default function SuperadminDashboardClient() {
   );
 
   const clinicasSinSuscripcion = useMemo(
-    () => clinicas.filter((clinica) => !suscripciones.some((suscripcion) => suscripcion.clinica_id === clinica.id)).length,
-    [clinicas, suscripciones]
+    () => clinicas.filter((clinica) => !licenciasVigentes.some((suscripcion) => suscripcion.clinica_id === clinica.id)).length,
+    [clinicas, licenciasVigentes]
   );
 
   const latestSessionDate = useMemo(() => {
@@ -533,20 +696,6 @@ export default function SuperadminDashboardClient() {
   useEffect(() => {
     setClinicasPage((current) => Math.min(current, Math.max(0, totalClinicaPages - 1)));
   }, [totalClinicaPages]);
-
-  const statsByEstado = useMemo(() => {
-    const estados: Array<SuscripcionVigente['suscripcion_estado']> = ['TRIAL', 'ACTIVA', 'PAST_DUE', 'SUSPENDIDA', 'CANCELADA', 'EXPIRADA'];
-    const base = estados.map((estado) => ({
-      estado,
-      total: suscripciones.filter((s) => s.suscripcion_estado === estado).length
-    }));
-    const max = Math.max(1, ...base.map((row) => row.total));
-
-    return base.map((row) => ({
-      ...row,
-      percent: Math.max(8, Math.round((row.total / max) * 100))
-    }));
-  }, [suscripciones]);
 
   const filteredUsers = useMemo(() => {
     return usuarios.filter((usuario) => {
@@ -624,7 +773,11 @@ export default function SuperadminDashboardClient() {
     setUsuarios(Array.isArray(usuariosJson.data) ? usuariosJson.data : []);
     setPlanes(Array.isArray(planesJson.data) ? planesJson.data : []);
     setTipos(Array.isArray(tiposJson.data) ? tiposJson.data : []);
-    setSuscripciones(Array.isArray(vigentesJson.data) ? vigentesJson.data : []);
+    setSuscripciones(
+      Array.isArray(vigentesJson.data)
+        ? vigentesJson.data.map((item: Partial<SuscripcionVigente> & { id?: string; estado?: string; empresa_id?: string | null }) => normalizeSuscripcionVigente(item))
+        : []
+    );
     setDashboardSummary(dashboardJson?.data || null);
     setActiveSessions(Array.isArray(sessionsJson?.data) ? sessionsJson.data : []);
 
@@ -671,6 +824,11 @@ export default function SuperadminDashboardClient() {
       tipo_negocio_id: selectedClinica.tipo_negocio_id || '',
       estado: selectedClinica.estado || 'ACTIVA'
     });
+    setIsEditingClinica(false);
+    setIsEditingPlan(false);
+    setUserEditorMode(null);
+    setCreatePersonaPreview(null);
+    setEditingUser(null);
     loadHistorialClinica(selectedClinica.id).catch(() => setHistorialClinica([]));
   }, [loadHistorialClinica, selectedClinica]);
 
@@ -692,6 +850,65 @@ export default function SuperadminDashboardClient() {
       setIsRefreshing(false);
     }
   }, [loadAllData, loadHistorialClinica, notify, selectedClinicaId]);
+
+  const startCreateUser = useCallback(() => {
+    setEditingUser(null);
+    setUserEditorMode('create');
+    setCreatePersonaPreview(null);
+    setAdminForm({ email: '', dni: '', password: '', rol: 'ADMIN' });
+  }, []);
+
+  const resolvePersonaByDni = useCallback(async (dni: string) => {
+    const normalizedDni = dni.trim();
+    if (!normalizedDni) {
+      throw new Error('El DNI es obligatorio');
+    }
+
+    const personaRes = await fetch(`/api/backend/personas/dni/${encodeURIComponent(normalizedDni)}`, {
+      credentials: 'include'
+    });
+    const personaPayload = await personaRes.json().catch(() => null);
+
+    if (!personaRes.ok || !personaPayload?.data?.id) {
+      throw new Error(personaPayload?.error || 'No se encontró persona por DNI');
+    }
+
+    const persona = personaPayload.data as PersonaData;
+    setPersonasById((prev) => ({ ...prev, [persona.id]: persona }));
+    return persona;
+  }, []);
+
+  const handleSearchCreatePersona = useCallback(async () => {
+    try {
+      const persona = await resolvePersonaByDni(adminForm.dni);
+      setCreatePersonaPreview(persona);
+      notify(`Persona encontrada: ${getPersonaNombre(persona)}`, 'success');
+    } catch (error) {
+      setCreatePersonaPreview(null);
+      notify(error instanceof Error ? error.message : 'No se pudo buscar la persona por DNI', 'error');
+    }
+  }, [adminForm.dni, notify, resolvePersonaByDni]);
+
+  const handleSearchEditPersona = useCallback(async () => {
+    if (!editingUser) return;
+
+    try {
+      const persona = await resolvePersonaByDni(editingUser.dni);
+      setEditingUser((prev) => (prev ? {
+        ...prev,
+        persona_id: persona.id,
+        dni: persona.dni || prev.dni,
+        nombres: persona.nombres || '',
+        apellido_paterno: persona.apellido_paterno || '',
+        apellido_materno: persona.apellido_materno || '',
+        sexo: persona.sexo || '',
+        fecha_nacimiento: persona.fecha_nacimiento || ''
+      } : prev));
+      notify(`Persona encontrada: ${getPersonaNombre(persona)}`, 'success');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo buscar la persona por DNI', 'error');
+    }
+  }, [editingUser, notify, resolvePersonaByDni]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -749,6 +966,9 @@ export default function SuperadminDashboardClient() {
 
       // Flujo en dos pasos: primero se crea la clínica, luego se asigna plan inicial opcional.
       const nuevaClinicaId = payload?.data?.id;
+      const selectedInitialPlan = availableLicensePlans.find((plan) => plan.id === createClinica.plan_id);
+      const automaticInitialEstado = selectedInitialPlan?.codigo === 'TRIAL_CLINICA' ? 'TRIAL' : 'ACTIVA';
+
       if (nuevaClinicaId && createClinica.plan_id) {
         const assignRes = await fetch('/api/backend/platform/suscripciones/asignar', {
           method: 'POST',
@@ -757,7 +977,7 @@ export default function SuperadminDashboardClient() {
           body: JSON.stringify({
             clinica_id: nuevaClinicaId,
             plan_id: createClinica.plan_id,
-            estado: createClinica.suscripcion_estado
+            estado: automaticInitialEstado
           })
         });
 
@@ -774,7 +994,7 @@ export default function SuperadminDashboardClient() {
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al crear clinica', 'error');
     }
-  }, [createClinica, notify, refreshData, resetCreateClinicaForm]);
+  }, [availableLicensePlans, createClinica, notify, refreshData, resetCreateClinicaForm]);
 
   const handleUpdateClinica = useCallback(async () => {
     if (!selectedClinicaId) return;
@@ -799,6 +1019,7 @@ export default function SuperadminDashboardClient() {
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo actualizar la clinica');
 
       notify('Clinica actualizada', 'success');
+      setIsEditingClinica(false);
       await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al actualizar clinica', 'error');
@@ -840,18 +1061,15 @@ export default function SuperadminDashboardClient() {
     if (!selectedClinicaId) return;
 
     if (!adminForm.email.trim() || !adminForm.dni.trim() || !adminForm.password.trim()) {
-      notify('Email, DNI y contrasena son obligatorios', 'error');
+      notify('Email, DNI y contraseña son obligatorios', 'error');
       return;
     }
 
     try {
-      const personaRes = await fetch(`/api/backend/personas/dni/${encodeURIComponent(adminForm.dni.trim())}`, {
-        credentials: 'include'
-      });
-      const personaPayload = await personaRes.json().catch(() => null);
-      if (!personaRes.ok || !personaPayload?.data?.id) {
-        throw new Error(personaPayload?.error || 'No se encontro persona por DNI');
-      }
+      const persona = createPersonaPreview?.id && createPersonaPreview.dni === adminForm.dni.trim()
+        ? createPersonaPreview
+        : await resolvePersonaByDni(adminForm.dni.trim());
+      setCreatePersonaPreview(persona);
 
       const headers = await getCsrfHeaders();
       const createRes = await fetch('/api/backend/usuarios', {
@@ -860,30 +1078,35 @@ export default function SuperadminDashboardClient() {
         headers,
         body: JSON.stringify({
           clinica_id: selectedClinicaId,
-          persona_id: personaPayload.data.id,
+          persona_id: persona.id,
           email: adminForm.email.trim(),
           password: adminForm.password,
-          rol: 'ADMIN',
+          rol: adminForm.rol,
           estado: 'ACTIVO'
         })
       });
 
       const createPayload = await createRes.json().catch(() => null);
-      if (!createRes.ok || !createPayload?.success) throw new Error(createPayload?.error || 'No se pudo crear admin');
+      if (!createRes.ok || !createPayload?.success) throw new Error(createPayload?.error || 'No se pudo crear el usuario');
 
-      notify('Admin creado correctamente', 'success');
-      setAdminForm({ email: '', dni: '', password: '' });
+      notify(`${adminForm.rol} creado correctamente`, 'success');
+      setAdminForm({ email: '', dni: '', password: '', rol: 'ADMIN' });
+      setCreatePersonaPreview(null);
+      setUserEditorMode(null);
       await refreshData();
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Error al crear admin', 'error');
+      notify(error instanceof Error ? error.message : 'Error al crear usuario', 'error');
     }
-  }, [adminForm, notify, refreshData, selectedClinicaId]);
+  }, [adminForm, createPersonaPreview, notify, refreshData, resolvePersonaByDni, selectedClinicaId]);
 
   const handleAssignPlan = useCallback(async () => {
     if (!assignPlanForm.clinica_id || !assignPlanForm.plan_id) {
       notify('Selecciona clinica y plan', 'error');
       return;
     }
+
+    const selectedPlanConfig = availableLicensePlans.find((plan) => plan.id === assignPlanForm.plan_id);
+    const automaticEstado = selectedPlanConfig?.codigo === 'TRIAL_CLINICA' ? 'TRIAL' : 'ACTIVA';
 
     try {
       const headers = await getCsrfHeaders();
@@ -894,19 +1117,52 @@ export default function SuperadminDashboardClient() {
         body: JSON.stringify({
           clinica_id: assignPlanForm.clinica_id,
           plan_id: assignPlanForm.plan_id,
-          estado: assignPlanForm.estado
+          estado: automaticEstado
         })
       });
 
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo asignar suscripcion');
 
-      notify('Suscripcion asignada correctamente', 'success');
+      notify(automaticEstado === 'TRIAL' ? 'Trial asignado correctamente' : 'Plan activado correctamente', 'success');
       await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al asignar suscripcion', 'error');
     }
-  }, [assignPlanForm, notify, refreshData]);
+  }, [assignPlanForm, availableLicensePlans, notify, refreshData]);
+
+  const handleRevokeCurrentPlan = useCallback(async () => {
+    if (!selectedClinicaId || !selectedSuscripcion?.plan_id) {
+      notify('La clínica no tiene un plan vigente para revocar', 'error');
+      return;
+    }
+
+    if (!window.confirm('¿Deseas revocar el plan actual de esta clínica?')) {
+      return;
+    }
+
+    try {
+      const headers = await getCsrfHeaders();
+      const res = await fetch('/api/backend/platform/suscripciones/asignar', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({
+          clinica_id: selectedClinicaId,
+          plan_id: selectedSuscripcion.plan_id,
+          estado: 'CANCELADA'
+        })
+      });
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo revocar el plan actual');
+
+      notify('Plan revocado correctamente', 'success');
+      await refreshData();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Error al revocar el plan', 'error');
+    }
+  }, [notify, refreshData, selectedClinicaId, selectedSuscripcion]);
 
   const normalizePlanPayload = useCallback((form: PlanFormState) => {
     return {
@@ -954,6 +1210,7 @@ export default function SuperadminDashboardClient() {
       notify(editingPlanId ? 'Plan actualizado correctamente' : 'Plan creado correctamente', 'success');
       setPlanForm(INITIAL_PLAN_FORM);
       setEditingPlanId(null);
+      setShowPlanEditor(false);
       await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al guardar plan', 'error');
@@ -961,6 +1218,7 @@ export default function SuperadminDashboardClient() {
   }, [editingPlanId, normalizePlanPayload, notify, planForm, refreshData]);
 
   const handleEditPlan = useCallback((plan: Plan) => {
+    setShowPlanEditor(true);
     setEditingPlanId(plan.id);
     setPlanForm({
       codigo: plan.codigo || '',
@@ -1002,16 +1260,50 @@ export default function SuperadminDashboardClient() {
     }
   }, [notify, refreshData]);
 
-  const startEditUser = useCallback((user: Usuario) => {
+  const startEditUser = useCallback(async (user: Usuario) => {
+    const persona = user.persona_id ? personasById[user.persona_id] : null;
+
+    setUserEditorMode('edit');
     setEditingUser({
       id: user.id,
       email: user.email,
       rol: user.rol,
       estado: user.estado,
       clinica_id: user.clinica_id || '',
+      persona_id: user.persona_id || '',
+      dni: user.dni || persona?.dni || '',
+      nombres: user.nombres || persona?.nombres || '',
+      apellido_paterno: user.apellido_paterno || persona?.apellido_paterno || '',
+      apellido_materno: user.apellido_materno || persona?.apellido_materno || '',
+      sexo: user.sexo || persona?.sexo || '',
+      fecha_nacimiento: user.fecha_nacimiento || persona?.fecha_nacimiento || '',
       password: ''
     });
-  }, []);
+
+    if (!user.persona_id || persona) return;
+
+    try {
+      const res = await fetch(`/api/backend/personas/${user.persona_id}`, { credentials: 'include' });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok || !payload?.data?.id) return;
+
+      const loadedPersona = payload.data as PersonaData;
+      setPersonasById((prev) => ({ ...prev, [loadedPersona.id]: loadedPersona }));
+      setEditingUser((prev) => (prev && prev.id === user.id
+        ? {
+            ...prev,
+            dni: loadedPersona.dni || prev.dni,
+            nombres: loadedPersona.nombres || prev.nombres,
+            apellido_paterno: loadedPersona.apellido_paterno || prev.apellido_paterno,
+            apellido_materno: loadedPersona.apellido_materno || prev.apellido_materno,
+            sexo: loadedPersona.sexo || prev.sexo,
+            fecha_nacimiento: loadedPersona.fecha_nacimiento || prev.fecha_nacimiento
+          }
+        : prev));
+    } catch {
+      // Silencioso: si la persona no carga, mantenemos la edición básica del usuario.
+    }
+  }, [personasById]);
 
   const handleSaveUser = useCallback(async () => {
     if (!editingUser) return;
@@ -1026,7 +1318,8 @@ export default function SuperadminDashboardClient() {
 
       const body: Record<string, unknown> = {
         email: editingUser.email.trim(),
-        estado: editingUser.estado
+        estado: editingUser.estado,
+        persona_id: editingUser.persona_id || undefined
       };
 
       if (editingUser.password.trim()) {
@@ -1050,6 +1343,7 @@ export default function SuperadminDashboardClient() {
 
       notify('Usuario actualizado correctamente', 'success');
       setEditingUser(null);
+      setUserEditorMode(null);
       await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al actualizar usuario', 'error');
@@ -1057,7 +1351,7 @@ export default function SuperadminDashboardClient() {
   }, [editingUser, notify, refreshData]);
 
   const handleDeleteUser = useCallback(async (user: Usuario) => {
-    if (!window.confirm(`Deseas eliminar el usuario ${user.email}?`)) return;
+    if (!window.confirm(`¿Deseas eliminar permanentemente el usuario ${user.email}? Esta acción no se puede deshacer.`)) return;
 
     try {
       const headers = await getCsrfHeaders();
@@ -1070,7 +1364,7 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo eliminar usuario');
 
-      notify('Usuario eliminado correctamente', 'success');
+      notify(payload?.message || 'Usuario eliminado permanentemente', 'success');
       await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al eliminar usuario', 'error');
@@ -1106,11 +1400,13 @@ export default function SuperadminDashboardClient() {
   const handleSelectTipoForEdit = useCallback((tipo: TipoNegocio) => {
     setEditingTipoId(tipo.id);
     setTipoForm({ codigo: tipo.codigo || '', nombre: tipo.nombre || '' });
+    setShowTipoEditor(true);
   }, []);
 
   const handleCancelTipoEdit = useCallback(() => {
     setEditingTipoId(null);
     setTipoForm({ codigo: '', nombre: '' });
+    setShowTipoEditor(false);
   }, []);
 
   const handleSaveTipo = useCallback(async () => {
@@ -1275,15 +1571,15 @@ export default function SuperadminDashboardClient() {
             </div>
           </header>
 
-          <main className="space-y-6 py-6">
+          <main className={section === 'clinicas' && clinicaView === 'list' ? 'flex h-[calc(100vh-180px)] flex-col overflow-hidden py-6' : 'space-y-6 py-6'}>
             {/* ====== DASHBOARD ====== */}
             {section === 'dashboard' && (
               <>
                 <section className="relative z-30 grid gap-4 xl:grid-cols-4 2xl:grid-cols-4">
-                  <MetricCard label="Clínicas" value={String(clinicas.length)} hint={`${totalClinicasActivas} activas`} icon={<FiBriefcase size={20} />} summaryTitle="Clinicas registradas" summaryItems={clinicasSummaryItems} summaryFooter={clinicas.length > 10 ? `+${clinicas.length - 10} clinicas adicionales` : undefined} />
-                  <MetricCard label="Usuarios activos" value={String(totalUsuariosActivos)} hint="Accesos habilitados" icon={<FiUsers size={20} />} summaryTitle="Usuarios activos" summaryItems={usuariosSummaryItems} summaryFooter={totalUsuariosActivos ? `${porcentajeUsuariosActivos}% del total activo` : 'Sin usuarios activos'} />
+                  <MetricCard label="Clínicas" value={String(totalClinicasRegistradas)} hint={`${totalClinicasActivas} activas de ${totalClinicasRegistradas}`} icon={<FiBriefcase size={20} />} summaryTitle="Clinicas registradas" summaryItems={clinicasSummaryItems} summaryFooter={totalClinicasRegistradas > 10 ? `+${totalClinicasRegistradas - 10} clinicas adicionales` : `${totalClinicasActivas} activas actualmente`} />
+                  <MetricCard label="Usuarios" value={String(totalUsuariosRegistrados)} hint={`${totalUsuariosActivos} activos de ${totalUsuariosRegistrados}`} icon={<FiUsers size={20} />} summaryTitle="Usuarios activos" summaryItems={usuariosSummaryItems} summaryFooter={totalUsuariosActivos ? `${porcentajeUsuariosActivos}% del total habilitado` : 'Sin usuarios activos'} />
                   <MetricCard label="Sesiones activas" value={String(sesionesActivas)} hint="Refresh tokens vigentes" icon={<FiShield size={20} />} summaryTitle="Sesiones activas" summaryItems={sesionesSummaryItems} summaryFooter={activeSessions.length > 10 ? `+${activeSessions.length - 10} sesiones adicionales` : `Sesiones activas actuales: ${sesionesActivas}`} />
-                  <MetricCard label="Planes" value={String(planes.length)} hint="Planes registrados" icon={<FiLayers size={20} />} summaryTitle="Planes y clinicas asociadas" summaryItems={planesSummaryItems} summaryFooter={`Total de planes: ${planes.length}`} />
+                  <MetricCard label="Licencias activas" value={String(clinicasConLicenciaActiva)} hint="Clínicas con plan vigente" icon={<FiLayers size={20} />} summaryTitle="Clínicas con licencia activa" summaryItems={licenciasActivasSummaryItems} summaryFooter={clinicasConLicenciaActiva > 0 ? 'Incluye TRIAL, ACTIVA y PAST_DUE' : 'Sin licencias vigentes'} />
                 </section>
 
                 <section className="relative z-0 grid gap-4 xl:grid-cols-2">
@@ -1295,7 +1591,7 @@ export default function SuperadminDashboardClient() {
                         <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--ui-surface-strong)]">
                           <div className="h-full rounded-full bg-[var(--ui-accent)]" style={{ width: `${Math.max(4, porcentajeClinicasActivas)}%` }} />
                         </div>
-                        <p className="mt-2 text-xs text-[var(--ui-muted)]">{dashboardSummary?.clinicasActivas ?? totalClinicasActivas} de {dashboardSummary?.clinicasTotal ?? clinicas.length}</p>
+                        <p className="mt-2 text-xs text-[var(--ui-muted)]">{totalClinicasActivas} de {totalClinicasRegistradas}</p>
                       </article>
                       <article className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
                         <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Usuarios activos</p>
@@ -1303,7 +1599,7 @@ export default function SuperadminDashboardClient() {
                         <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--ui-surface-strong)]">
                           <div className="h-full rounded-full bg-[var(--ui-accent)]" style={{ width: `${Math.max(4, porcentajeUsuariosActivos)}%` }} />
                         </div>
-                        <p className="mt-2 text-xs text-[var(--ui-muted)]">{dashboardSummary?.usuariosActivos ?? totalUsuariosActivos} de {dashboardSummary?.usuariosTotal ?? usuarios.length}</p>
+                        <p className="mt-2 text-xs text-[var(--ui-muted)]">{totalUsuariosActivos} de {totalUsuariosRegistrados}</p>
                       </article>
                     </div>
                   </Surface>
@@ -1336,9 +1632,9 @@ export default function SuperadminDashboardClient() {
                         <p className="mt-2 text-sm text-[var(--ui-muted)]">Requieren asignación o revisión comercial.</p>
                       </article>
                       <article className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
-                        <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Planes activos</p>
+                        <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Planes oficiales</p>
                         <p className="mt-2 text-3xl font-semibold text-[var(--ui-foreground)]">{planesActivos}</p>
-                        <p className="mt-2 text-sm text-[var(--ui-muted)]">Configuraciones disponibles para nuevas altas.</p>
+                        <p className="mt-2 text-sm text-[var(--ui-muted)]">Catálogo oficial de licencias disponible para nuevas altas.</p>
                       </article>
                       <article className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
                         <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Usuarios inactivos</p>
@@ -1353,25 +1649,33 @@ export default function SuperadminDashboardClient() {
                     </div>
                   </Surface>
 
-                  <Surface eyebrow="Recomendación" title="Siguiente foco sugerido" description="Implementé un bloque corto y visual para rellenar el panel sin empujar contenido fuera de pantalla.">
+                  <Surface eyebrow="Licenciamiento" title="Clínicas con licencia activa" description="Visibilidad rápida de las clínicas que ya operan con Trial, licencia activa o PAST_DUE.">
                     <div className="space-y-3">
                       <div className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
-                        <p className="text-sm font-semibold text-[var(--ui-foreground)]">Lo más útil en este espacio</p>
-                        <p className="mt-2 text-sm leading-6 text-[var(--ui-muted)]">
-                          Un resumen operativo corto funciona mejor aquí que otra tabla: da contexto inmediato, llena visualmente el dashboard y evita agregar scroll innecesario.
-                        </p>
+                        <p className="text-sm font-semibold text-[var(--ui-foreground)]">Estado actual de licencias</p>
+                        {licenciasActivasSummaryItems.length === 0 ? (
+                          <p className="mt-2 text-sm text-[var(--ui-muted)]">Aún no hay clínicas con licencia activa.</p>
+                        ) : (
+                          <div className="mt-3 space-y-2">
+                            {licenciasActivasSummaryItems.slice(0, 6).map((item, index) => (
+                              <div key={`licencia-${index}`} className="rounded-[14px] bg-[var(--ui-card)] px-3 py-2 text-sm text-[var(--ui-foreground)]">
+                                {item}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
                         <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Prioridad actual</p>
                         <p className="mt-2 text-lg font-semibold text-[var(--ui-foreground)]">
                           {clinicasSinSuscripcion > 0
                             ? `${clinicasSinSuscripcion} clínicas requieren plan asignado`
-                            : usuariosInactivos > 0
-                              ? `${usuariosInactivos} usuarios inactivos por revisar`
+                            : clinicasConLicenciaActiva > 0
+                              ? `${clinicasConLicenciaActiva} clínicas ya tienen licencia activa`
                               : 'Operación estable en este momento'}
                         </p>
                         <p className="mt-2 text-sm text-[var(--ui-muted)]">
-                          Esto te deja una lectura rápida del sistema apenas entras al panel.
+                          Así puedes revisar rápidamente qué clínicas ya están licenciadas y cuáles todavía necesitan asignación.
                         </p>
                       </div>
                     </div>
@@ -1384,7 +1688,7 @@ export default function SuperadminDashboardClient() {
             {/* ====== CLINICAS — LISTA ====== */}
             {section === 'clinicas' && clinicaView === 'list' && (
               <>
-                <section className="grid gap-6 xl:grid-cols-[1.45fr_0.85fr]">
+                <section className="grid flex-1 gap-6 xl:grid-cols-[1.45fr_0.85fr] xl:items-start xl:overflow-hidden">
                   <Surface
                     eyebrow="Clínicas"
                     title="Listado de clínicas"
@@ -1403,59 +1707,60 @@ export default function SuperadminDashboardClient() {
                       </button>
                     }
                   >
-                    <div className="space-y-4">
-                      {visibleClinicas.length === 0 ? (
-                        <div className="rounded-[22px] border border-dashed border-[var(--ui-border)] bg-[var(--ui-surface)] px-5 py-8 text-sm text-[var(--ui-muted)]">
-                          No hay clínicas registradas todavía.
-                        </div>
-                      ) : (
-                        visibleClinicas.map((clinica) => {
-                          const sub = suscripciones.find((s) => s.clinica_id === clinica.id) || null;
-                          const badge = getSubBadge(sub);
-                          return (
-                            <article key={clinica.id} className="rounded-[24px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5">
-                              <div className="flex flex-wrap items-start justify-between gap-4">
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-lg font-semibold text-[var(--ui-foreground)]">{clinica.nombre}</p>
-                                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${clinica.estado === 'ACTIVA' ? 'bg-emerald-500/14 text-[var(--ui-success)]' : 'bg-rose-500/14 text-[var(--ui-danger)]'}`}>{clinica.estado}</span>
-                                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${badge.cls}`}>{badge.label}</span>
+                    <div className="flex h-[460px] flex-col">
+                      <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+                        {visibleClinicas.length === 0 ? (
+                          <div className="rounded-[22px] border border-dashed border-[var(--ui-border)] bg-[var(--ui-surface)] px-5 py-8 text-sm text-[var(--ui-muted)]">
+                            No hay clínicas registradas todavía.
+                          </div>
+                        ) : (
+                          visibleClinicas.map((clinica) => {
+                            const sub = suscripciones.find((s) => s.clinica_id === clinica.id) || null;
+                            const badge = getSubBadge(sub);
+                            return (
+                              <article key={clinica.id} className="flex min-h-[152px] flex-col justify-between rounded-[24px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5">
+                                <div className="flex flex-wrap items-start justify-between gap-4">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-lg font-semibold text-[var(--ui-foreground)]">{clinica.nombre}</p>
+                                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${clinica.estado === 'ACTIVA' ? 'bg-emerald-500/14 text-[var(--ui-success)]' : 'bg-rose-500/14 text-[var(--ui-danger)]'}`}>{clinica.estado}</span>
+                                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${badge.cls}`}>{badge.label}</span>
+                                    </div>
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                      <div>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Tipo</p>
+                                        <p className="mt-1 text-sm text-[var(--ui-foreground)]">{clinica.tipo_negocio_nombre || clinica.tipo_negocio_codigo || '—'}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">RUC</p>
+                                        <p className="mt-1 text-sm text-[var(--ui-foreground)]">{clinica.ruc || '—'}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Plan</p>
+                                        <p className="mt-1 text-sm text-[var(--ui-foreground)]">{sub?.plan_nombre || sub?.plan_codigo || 'Sin plan activo'}</p>
+                                      </div>
+                                    </div>
+                                    <p className="mt-3 text-sm text-[var(--ui-muted)]">{clinica.direccion || 'Sin dirección registrada'}</p>
                                   </div>
-                                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                                    <div>
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Tipo</p>
-
-                                      <p className="mt-1 text-sm text-[var(--ui-foreground)]">{clinica.tipo_negocio_nombre || clinica.tipo_negocio_codigo || '—'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">RUC</p>
-                                      <p className="mt-1 text-sm text-[var(--ui-foreground)]">{clinica.ruc || '—'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Plan</p>
-                                      <p className="mt-1 text-sm text-[var(--ui-foreground)]">{sub?.plan_nombre || sub?.plan_codigo || 'Sin plan activo'}</p>
-                                    </div>
-                                  </div>
-                                  <p className="mt-3 text-sm text-[var(--ui-muted)]">{clinica.direccion || 'Sin dirección registrada'}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedClinicaId(clinica.id);
+                                      setAssignPlanForm((prev) => ({ ...prev, clinica_id: clinica.id }));
+                                      setClinicaView('detail');
+                                    }}
+                                    className="inline-flex items-center gap-1.5 rounded-full bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-white"
+                                  >
+                                    Ver detalle <FiChevronRight size={14} />
+                                  </button>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedClinicaId(clinica.id);
-                                    setAssignPlanForm((prev) => ({ ...prev, clinica_id: clinica.id }));
-                                    setClinicaView('detail');
-                                  }}
-                                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-white"
-                                >
-                                  Ver detalle <FiChevronRight size={14} />
-                                </button>
-                              </div>
-                            </article>
-                          );
-                        })
-                      )}
+                              </article>
+                            );
+                          })
+                        )}
+                      </div>
 
-                      <div className="flex items-center justify-between gap-3 rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3">
+                      <div className="mt-4 flex items-center justify-between gap-3 rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3">
                         <p className="text-sm text-[var(--ui-muted)]">
                           Página <span className="font-semibold text-[var(--ui-foreground)]">{clinicasPage + 1}</span> de <span className="font-semibold text-[var(--ui-foreground)]">{totalClinicaPages}</span>
                         </p>
@@ -1481,10 +1786,67 @@ export default function SuperadminDashboardClient() {
                     </div>
                   </Surface>
 
-                  <Surface eyebrow="Catálogo" title="Tipos de negocio" description="Administra códigos y nombres del catálogo directamente desde este panel.">
-                    <div className="space-y-4">
-                      <div className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
-                        <p className="text-sm font-semibold text-[var(--ui-foreground)]">{editingTipoId ? 'Editar tipo' : 'Nuevo tipo'}</p>
+                  <Surface
+                    eyebrow="Catálogo"
+                    title="Tipos de negocio"
+                    description="Visualiza hasta 4 por bloque y desplázate dentro del panel para ver más, sin afectar el scroll general."
+                    action={
+                      <div className="flex h-10 w-10 items-center justify-center">
+                        {!showTipoEditor ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTipoId(null);
+                              setTipoForm({ codigo: '', nombre: '' });
+                              setShowTipoEditor(true);
+                            }}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--ui-accent)] text-white"
+                            aria-label="Agregar tipo de negocio"
+                            title="Nuevo tipo de negocio"
+                          >
+                            <FiPlus size={18} />
+                          </button>
+                        ) : (
+                          <span className="block h-10 w-10" aria-hidden="true" />
+                        )}
+                      </div>
+                    }
+                  >
+                    {!showTipoEditor ? (
+                      <div className="flex h-[460px] flex-col space-y-3">
+                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+                          {tipos.length} tipos registrados · se muestran hasta 4 visibles con scroll interno.
+                        </div>
+
+                        <div className="flex-1 space-y-3 overflow-y-auto pr-2">
+                          {tipos.length === 0 ? (
+                            <div className="rounded-[20px] border border-dashed border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 text-sm text-[var(--ui-muted)]">
+                              Aún no hay tipos de negocio. Usa el botón <span className="font-semibold text-[var(--ui-foreground)]">+</span> para crear el primero.
+                            </div>
+                          ) : (
+                            tipos.map((tipo) => (
+                              <article key={tipo.id} className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                                <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Código</p>
+                                <p className="mt-1 text-sm font-semibold text-[var(--ui-foreground)]">{tipo.codigo || 'GENERAL'}</p>
+                                <p className="mt-3 text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Nombre</p>
+                                <p className="mt-1 text-base font-semibold text-[var(--ui-foreground)]">{tipo.nombre}</p>
+                                <div className="mt-3 flex items-center gap-2">
+                                  <button type="button" onClick={() => handleSelectTipoForEdit(tipo)} className="inline-flex items-center gap-1 rounded-full bg-[var(--ui-card)] px-3 py-1.5 text-xs font-semibold text-[var(--ui-foreground)]">
+                                    <FiEdit2 size={12} /> Editar
+                                  </button>
+                                  <button type="button" onClick={() => handleDeleteTipo(tipo)} className="inline-flex items-center gap-1 rounded-full bg-rose-500/14 px-3 py-1.5 text-xs font-semibold text-[var(--ui-danger)]">
+                                    <FiTrash2 size={12} /> Eliminar
+                                  </button>
+                                </div>
+                              </article>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex h-[460px] flex-col rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4 overflow-y-auto">
+                        <p className="text-sm font-semibold text-[var(--ui-foreground)]">{editingTipoId ? 'Editar tipo seleccionado' : 'Nuevo tipo de negocio'}</p>
+                        <p className="mt-1 text-xs text-[var(--ui-muted)]">Este mismo bloque cambia entre creación y edición del tipo seleccionado.</p>
                         <div className="mt-3 grid gap-3">
                           <input
                             className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-3 py-2 text-sm"
@@ -1500,32 +1862,15 @@ export default function SuperadminDashboardClient() {
                           />
                           <div className="grid grid-cols-2 gap-2">
                             <button type="button" onClick={handleSaveTipo} className="rounded-[12px] bg-[var(--ui-accent)] px-3 py-2 text-sm font-semibold text-white">
-                              {editingTipoId ? 'Guardar' : 'Crear'}
+                              {editingTipoId ? 'Guardar cambios' : 'Crear tipo'}
                             </button>
                             <button type="button" onClick={handleCancelTipoEdit} className="rounded-[12px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-3 py-2 text-sm font-semibold text-[var(--ui-foreground)]">
-                              Limpiar
+                              Cancelar
                             </button>
                           </div>
                         </div>
                       </div>
-
-                      {tipos.map((tipo) => (
-                        <article key={tipo.id} className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Código</p>
-                          <p className="mt-1 text-sm font-semibold text-[var(--ui-foreground)]">{tipo.codigo || 'GENERAL'}</p>
-                          <p className="mt-3 text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Nombre</p>
-                          <p className="mt-1 text-base font-semibold text-[var(--ui-foreground)]">{tipo.nombre}</p>
-                          <div className="mt-3 flex items-center gap-2">
-                            <button type="button" onClick={() => handleSelectTipoForEdit(tipo)} className="inline-flex items-center gap-1 rounded-full bg-[var(--ui-card)] px-3 py-1.5 text-xs font-semibold text-[var(--ui-foreground)]">
-                              <FiEdit2 size={12} /> Editar
-                            </button>
-                            <button type="button" onClick={() => handleDeleteTipo(tipo)} className="inline-flex items-center gap-1 rounded-full bg-rose-500/14 px-3 py-1.5 text-xs font-semibold text-[var(--ui-danger)]">
-                              <FiTrash2 size={12} /> Eliminar
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
+                    )}
                   </Surface>
                 </section>
               </>
@@ -1593,27 +1938,16 @@ export default function SuperadminDashboardClient() {
                           <span className="text-[var(--ui-muted)]">Plan inicial</span>
                           <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3" value={createClinica.plan_id} onChange={(e) => setCreateClinica((p) => ({ ...p, plan_id: e.target.value }))}>
                             <option value="">Solo trial automático</option>
-                            {planes.map((plan) => (
+                            {availableLicensePlans.map((plan) => (
                               <option key={plan.id} value={plan.id}>{plan.nombre}</option>
                             ))}
                           </select>
                         </label>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <label className="grid gap-2 text-sm">
-                            <span className="text-[var(--ui-muted)]">Estado suscripción</span>
-                            <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3" value={createClinica.suscripcion_estado} onChange={(e) => setCreateClinica((p) => ({ ...p, suscripcion_estado: e.target.value as 'TRIAL' | 'ACTIVA' | 'PAST_DUE' | 'SUSPENDIDA' | 'CANCELADA' | 'EXPIRADA' }))}>
-                              <option value="TRIAL">TRIAL</option>
-                              <option value="ACTIVA">ACTIVA</option>
-                              <option value="PAST_DUE">PAST_DUE</option>
-                              <option value="SUSPENDIDA">SUSPENDIDA</option>
-                              <option value="CANCELADA">CANCELADA</option>
-                              <option value="EXPIRADA">EXPIRADA</option>
-                            </select>
-                          </label>
+                        <div className="grid gap-4 md:grid-cols-1">
                           <div className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-sm text-[var(--ui-muted)]">
-                            <p className="font-semibold text-[var(--ui-foreground)]">Duración automática</p>
-                            <p className="mt-1">TRIAL: 14 días exactos.</p>
-                            <p>No TRIAL: 1 mes calendario exacto (ejemplo: 15 Ene → 15 Feb).</p>
+                            <p className="font-semibold text-[var(--ui-foreground)]">Estado automático</p>
+                            <p className="mt-1">Si no seleccionas plan, la clínica entra en <strong>TRIAL</strong> automáticamente.</p>
+                            <p className="mt-1">Si seleccionas Basic, Pro o Enterprise, la licencia se activa automáticamente como <strong>ACTIVA</strong>.</p>
                           </div>
                         </div>
                       </div>
@@ -1648,235 +1982,549 @@ export default function SuperadminDashboardClient() {
                   </div>
                 </div>
 
-                <section className="grid gap-6 xl:grid-cols-2">
-                  <Surface eyebrow="Ficha" title="Información de la clínica">
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Nombre</p>
-                          <p className="mt-2 font-semibold">{selectedClinica.nombre}</p>
-                        </div>
-                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">RUC</p>
-                          <p className="mt-2 text-sm">{selectedClinica.ruc || 'No definido'}</p>
-                        </div>
-                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Dirección</p>
-                          <p className="mt-2 text-sm">{selectedClinica.direccion || 'No definida'}</p>
-                        </div>
-                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Teléfono</p>
-                          <p className="mt-2 text-sm">{selectedClinica.telefono || 'No definido'}</p>
-                        </div>
-                      </div>
-                      <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
-                        <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Suscripción vigente</p>
-                        <p className="mt-2 font-semibold">{selectedSuscripcion?.plan_nombre || selectedSuscripcion?.plan_codigo || 'Sin plan activo'}</p>
-                        <p className="mt-1 text-xs text-[var(--ui-muted)]">Estado: {selectedSuscripcion?.suscripcion_estado || 'Sin estado'}</p>
-                        <p className="mt-1 text-xs text-[var(--ui-muted)]">Vence: {formatDate(selectedSuscripcion?.periodo_actual_fin)}</p>
-                        <p className="mt-1 text-xs text-[var(--ui-muted)]">Trial hasta: {formatDate(selectedSuscripcion?.trial_ends_at)}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Usuarios / Capacidad</p>
-                          <p className="mt-2 text-sm font-semibold">
-                            {usuariosPorClinica.length} / {selectedPlan?.max_usuarios ?? 'Ilimitado'}
-                          </p>
-                        </div>
-                        <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Storage (GB)</p>
-                          <p className="mt-2 text-sm font-semibold">{selectedPlan?.max_storage_gb ?? 'Ilimitado'}</p>
-                        </div>
-                      </div>
-                      {historialClinica.length === 0 && (
-                        <div className="inline-flex items-center gap-2 rounded-[16px] border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-[var(--ui-warning)]">
-                          <FiAlertCircle size={14} /> Sin historial cargado.
-                        </div>
-                      )}
-                    </div>
-                  </Surface>
-
-                  <Surface eyebrow="Editar" title="Modificar datos de la clínica">
-                    <div className="grid gap-3">
-                      <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Nombre" value={editClinica.nombre} onChange={(e) => setEditClinica((p) => ({ ...p, nombre: e.target.value }))} />
-                      <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="RUC" value={editClinica.ruc} onChange={(e) => setEditClinica((p) => ({ ...p, ruc: e.target.value.replace(/\D/g, '').slice(0, 11) }))} />
-                      <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Dirección" value={editClinica.direccion} onChange={(e) => setEditClinica((p) => ({ ...p, direccion: e.target.value }))} />
-                      <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Teléfono" value={editClinica.telefono} onChange={(e) => setEditClinica((p) => ({ ...p, telefono: e.target.value.replace(/\D/g, '').slice(0, 20) }))} />
-                      <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={editClinica.tipo_negocio_id} onChange={(e) => setEditClinica((p) => ({ ...p, tipo_negocio_id: e.target.value }))}>
-                        <option value="">Tipo de negocio</option>
-                        {tipos.map((tipo) => (
-                          <option key={tipo.id} value={tipo.id}>{tipo.nombre}</option>
-                        ))}
-                      </select>
-                      <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={editClinica.estado} onChange={(e) => setEditClinica((p) => ({ ...p, estado: e.target.value as 'ACTIVA' | 'INACTIVA' }))}>
-                        <option value="ACTIVA">ACTIVA</option>
-                        <option value="INACTIVA">INACTIVA</option>
-                      </select>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button type="button" onClick={handleUpdateClinica} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">Guardar cambios</button>
-                        <button type="button" onClick={() => handleClinicaLifecycle(selectedClinica.estado === 'ACTIVA' ? 'desactivar' : 'reactivar')} className="rounded-[16px] bg-[var(--ui-warning)] px-4 py-3 text-sm font-semibold text-white">
+                <section className="grid gap-6">
+                  <Surface
+                    eyebrow="Clínica"
+                    title="Datos generales de la clínica"
+                    description="Los datos editables están visibles en el mismo bloque y solo se habilitan cuando entras en modo edición."
+                    action={
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!isEditingClinica ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingClinica(true)}
+                            className="inline-flex items-center gap-2 rounded-full bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-white"
+                          >
+                            <FiEdit2 size={14} /> Editar
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleUpdateClinica}
+                              className="inline-flex items-center gap-2 rounded-full bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-white"
+                            >
+                              <FiCheckCircle size={14} /> Guardar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditClinica({
+                                  nombre: selectedClinica.nombre || '',
+                                  ruc: selectedClinica.ruc || '',
+                                  direccion: selectedClinica.direccion || '',
+                                  telefono: selectedClinica.telefono || '',
+                                  tipo_negocio_id: selectedClinica.tipo_negocio_id || '',
+                                  estado: selectedClinica.estado || 'ACTIVA'
+                                });
+                                setIsEditingClinica(false);
+                              }}
+                              className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)]"
+                            >
+                              <FiX size={14} /> Cancelar
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleClinicaLifecycle(selectedClinica.estado === 'ACTIVA' ? 'desactivar' : 'reactivar')}
+                          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white ${selectedClinica.estado === 'ACTIVA' ? 'bg-[var(--ui-danger)]' : 'bg-emerald-600'}`}
+                        >
+                          <FiTrash2 size={14} />
                           {selectedClinica.estado === 'ACTIVA' ? 'Desactivar' : 'Reactivar'}
                         </button>
                       </div>
-                      <button type="button" onClick={() => handleClinicaLifecycle('eliminar')} className="rounded-[16px] bg-[var(--ui-danger)] px-4 py-3 text-sm font-semibold text-white">Eliminar clínica</button>
+                    }
+                  >
+                    <div className="space-y-4">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <label className={`grid gap-2 rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <span className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Nombre</span>
+                          <input disabled={!isEditingClinica} className={`rounded-[12px] px-3 py-2 text-sm text-[var(--ui-foreground)] ${isEditingClinica ? 'border border-[var(--ui-border)] bg-white' : 'border border-transparent bg-transparent p-0 shadow-none'}`} value={editClinica.nombre} onChange={(e) => setEditClinica((p) => ({ ...p, nombre: e.target.value }))} />
+                        </label>
+                        <label className={`grid gap-2 rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <span className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">RUC</span>
+                          <input disabled={!isEditingClinica} className={`rounded-[12px] px-3 py-2 text-sm text-[var(--ui-foreground)] ${isEditingClinica ? 'border border-[var(--ui-border)] bg-white' : 'border border-transparent bg-transparent p-0 shadow-none'}`} value={editClinica.ruc} onChange={(e) => setEditClinica((p) => ({ ...p, ruc: e.target.value.replace(/\D/g, '').slice(0, 11) }))} />
+                        </label>
+                        <label className={`grid gap-2 rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <span className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Estado clínica</span>
+                          <select disabled={!isEditingClinica} className={`rounded-[12px] px-3 py-2 text-sm text-[var(--ui-foreground)] ${isEditingClinica ? 'border border-[var(--ui-border)] bg-white' : 'border border-transparent bg-transparent p-0 shadow-none'}`} value={editClinica.estado} onChange={(e) => setEditClinica((p) => ({ ...p, estado: e.target.value as 'ACTIVA' | 'INACTIVA' }))}>
+                            <option value="ACTIVA">ACTIVA</option>
+                            <option value="INACTIVA">INACTIVA</option>
+                          </select>
+                        </label>
+                        <label className={`grid gap-2 rounded-[16px] border px-4 py-3 md:col-span-2 xl:col-span-1 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <span className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Dirección</span>
+                          <input disabled={!isEditingClinica} className={`rounded-[12px] px-3 py-2 text-sm text-[var(--ui-foreground)] ${isEditingClinica ? 'border border-[var(--ui-border)] bg-white' : 'border border-transparent bg-transparent p-0 shadow-none'}`} value={editClinica.direccion} onChange={(e) => setEditClinica((p) => ({ ...p, direccion: e.target.value }))} />
+                        </label>
+                        <label className={`grid gap-2 rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <span className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Teléfono</span>
+                          <input disabled={!isEditingClinica} className={`rounded-[12px] px-3 py-2 text-sm text-[var(--ui-foreground)] ${isEditingClinica ? 'border border-[var(--ui-border)] bg-white' : 'border border-transparent bg-transparent p-0 shadow-none'}`} value={editClinica.telefono} onChange={(e) => setEditClinica((p) => ({ ...p, telefono: e.target.value.replace(/\D/g, '').slice(0, 20) }))} />
+                        </label>
+                        <label className={`grid gap-2 rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <span className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Tipo de negocio</span>
+                          <select disabled={!isEditingClinica} className={`rounded-[12px] px-3 py-2 text-sm text-[var(--ui-foreground)] ${isEditingClinica ? 'border border-[var(--ui-border)] bg-white' : 'border border-transparent bg-transparent p-0 shadow-none'}`} value={editClinica.tipo_negocio_id} onChange={(e) => setEditClinica((p) => ({ ...p, tipo_negocio_id: e.target.value }))}>
+                            <option value="">Tipo de negocio</option>
+                            {tipos.map((tipo) => (
+                              <option key={tipo.id} value={tipo.id}>{tipo.nombre}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className={`rounded-[16px] border px-4 py-3 md:col-span-2 xl:col-span-1 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Suscripción vigente</p>
+                          <p className="mt-2 font-semibold text-[var(--ui-foreground)]">{selectedSuscripcion?.plan_nombre || selectedSuscripcion?.plan_codigo || 'Sin plan activo'}</p>
+                          <p className="mt-1 text-xs text-[var(--ui-muted)]">Estado: {selectedSuscripcion?.suscripcion_estado || 'Sin estado'}</p>
+                          <p className="mt-1 text-xs text-[var(--ui-muted)]">Vence: {formatDate(selectedSuscripcion?.periodo_actual_fin)}</p>
+                        </div>
+                        <div className={`rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Usuarios activos</p>
+                          <p className="mt-2 text-sm font-semibold text-[var(--ui-foreground)]">{usuariosPorClinica.length}</p>
+                        </div>
+                        <div className={`rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Límite del plan</p>
+                          <p className="mt-2 text-sm font-semibold text-[var(--ui-foreground)]">{selectedSuscripcion?.max_usuarios ?? selectedPlan?.max_usuarios ?? 'Ilimitado'}</p>
+                        </div>
+                        <div className={`rounded-[16px] border px-4 py-3 ${isEditingClinica ? 'border-[var(--ui-border)] bg-white shadow-sm' : 'border-slate-200 bg-slate-100/80'}`}>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Storage (GB)</p>
+                          <p className="mt-2 text-sm font-semibold text-[var(--ui-foreground)]">{selectedSuscripcion?.max_storage_gb ?? selectedPlan?.max_storage_gb ?? 'Ilimitado'}</p>
+                        </div>
+                      </div>
+
+                      <div className={`rounded-[16px] border px-4 py-3 text-sm ${isEditingClinica ? 'border-[var(--ui-border)] bg-white text-[var(--ui-foreground)]' : 'border-slate-200 bg-slate-100/80 text-[var(--ui-muted)]'}`}>
+                        {isEditingClinica
+                          ? 'Modo edición activo: los campos editables se muestran en blanco para diferenciarlos claramente.'
+                          : 'Vista de solo lectura: los datos aparecen en un tono gris suave hasta que presiones Editar.'}
+                      </div>
                     </div>
                   </Surface>
                 </section>
 
-                <Surface eyebrow="Suscripción" title="Gestionar suscripción de esta clínica" description="Cambia plan y estado sin salir del detalle.">
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={assignPlanForm.plan_id} onChange={(e) => setAssignPlanForm((p) => ({ ...p, plan_id: e.target.value }))}>
-                      <option value="">Selecciona plan</option>
-                      {planes.filter((plan) => plan.estado === 'ACTIVO').map((plan) => (
-                        <option key={plan.id} value={plan.id}>{plan.nombre} ({plan.codigo})</option>
-                      ))}
-                    </select>
-                    <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={assignPlanForm.estado} onChange={(e) => setAssignPlanForm((p) => ({ ...p, estado: e.target.value as typeof p.estado }))}>
-                      <option value="TRIAL">TRIAL</option>
-                      <option value="ACTIVA">ACTIVA</option>
-                      <option value="PAST_DUE">PAST_DUE</option>
-                      <option value="SUSPENDIDA">SUSPENDIDA</option>
-                      <option value="CANCELADA">CANCELADA</option>
-                      <option value="EXPIRADA">EXPIRADA</option>
-                    </select>
-                    <div className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-xs text-[var(--ui-muted)]">
-                      TRIAL: 14 días. Otros estados: 1 mes calendario exacto.
-                    </div>
-                    <button type="button" onClick={handleAssignPlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
-                      Guardar suscripción
-                    </button>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button type="button" onClick={() => setSection('suscripciones')} className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)]">
-                      Ir a módulo de suscripciones
-                    </button>
-                    <button type="button" onClick={() => setSection('usuarios')} className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)]">
-                      Ir a módulo de usuarios
-                    </button>
-                  </div>
-                </Surface>
-
-                <Surface eyebrow="Administradores" title={`Admins de ${selectedClinica.nombre}`} description="Gestiona los administradores vinculados a esta clínica.">
+                <Surface eyebrow="Licencias" title="Plan e historial de esta clínica" description="En la mitad izquierda ves el plan actual y todo lo que puedes hacer con él; en la derecha se mantiene el historial completo.">
                   <div className="grid gap-6 xl:grid-cols-2">
-                    <div>
-                      <p className="mb-3 text-sm font-semibold">Admins registrados</p>
-                      {adminsPorClinica.length === 0 && <p className="text-sm text-[var(--ui-muted)]">No hay admins registrados.</p>}
-                      {adminsPorClinica.map((admin) => (
-                        <div key={admin.id} className="mt-2 flex items-center justify-between rounded-[16px] bg-[var(--ui-card)] px-4 py-3">
-                          <div>
-                            <p className="font-semibold">{admin.email}</p>
-                            <p className="text-xs text-[var(--ui-muted)]">ID persona: {admin.persona_id || 'Sin vínculo'}</p>
+                    <div className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                      <div className="flex h-full flex-col gap-4">
+                        <div className="rounded-[18px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-5 py-5 text-center">
+                          <p className="text-xs uppercase tracking-[0.24em] text-[var(--ui-muted)]">Plan actual</p>
+                          <p className="mt-3 text-2xl font-semibold text-[var(--ui-foreground)]">{selectedSuscripcion?.plan_nombre || selectedSuscripcion?.plan_codigo || 'Sin plan activo'}</p>
+                          <div className="mt-3 flex flex-wrap justify-center gap-2">
+                            <span className="rounded-full bg-[var(--ui-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-accent)]">
+                              {selectedSuscripcion?.plan_codigo || 'SIN_PLAN'}
+                            </span>
+                            <span className="rounded-full bg-[var(--ui-surface-strong)] px-3 py-1 text-xs font-semibold text-[var(--ui-foreground)]">
+                              {selectedSuscripcion?.suscripcion_estado || 'Sin estado'}
+                            </span>
                           </div>
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => startEditUser(admin)} className="rounded-full bg-[var(--ui-surface-strong)] p-2 text-[var(--ui-foreground)]"><FiEdit2 size={14} /></button>
-                            <button type="button" onClick={() => handleToggleUsuario(admin)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white"><FiUser size={14} /></button>
+
+                          <div className="mt-4 grid gap-3 text-left sm:grid-cols-2">
+                            <div className="rounded-[14px] bg-[var(--ui-surface)] px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Vence</p>
+                              <p className="mt-1 text-sm font-semibold text-[var(--ui-foreground)]">{formatDate(selectedSuscripcion?.periodo_actual_fin)}</p>
+                            </div>
+                            <div className="rounded-[14px] bg-[var(--ui-surface)] px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Precio mensual</p>
+                              <p className="mt-1 text-sm font-semibold text-[var(--ui-foreground)]">{selectedSuscripcion?.precio_mensual != null ? `${selectedSuscripcion?.moneda || 'PEN'} ${selectedSuscripcion.precio_mensual}` : 'No definido'}</p>
+                            </div>
+                            <div className="rounded-[14px] bg-[var(--ui-surface)] px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Usuarios</p>
+                              <p className="mt-1 text-sm font-semibold text-[var(--ui-foreground)]">{selectedSuscripcion?.max_usuarios ?? selectedPlan?.max_usuarios ?? 'Ilimitado'}</p>
+                            </div>
+                            <div className="rounded-[14px] bg-[var(--ui-surface)] px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Storage</p>
+                              <p className="mt-1 text-sm font-semibold text-[var(--ui-foreground)]">{selectedSuscripcion?.max_storage_gb ?? selectedPlan?.max_storage_gb ?? 'Ilimitado'} GB</p>
+                            </div>
                           </div>
                         </div>
-                      ))}
+
+                        <div className="grid gap-3">
+                          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditingPlan(true);
+                                setAssignPlanForm((prev) => ({ ...prev, plan_id: selectedSuscripcion?.plan_id || prev.plan_id }));
+                              }}
+                              className="inline-flex items-center justify-center gap-2 rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white"
+                            >
+                              <FiEdit2 size={14} /> Modificar plan
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRevokeCurrentPlan}
+                              disabled={!selectedSuscripcion?.plan_id}
+                              className="inline-flex h-[50px] w-[50px] items-center justify-center rounded-[16px] border border-rose-200 bg-rose-50 text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label="Eliminar plan actual"
+                              title="Eliminar plan actual"
+                            >
+                              <FiTrash2 size={16} />
+                            </button>
+                          </div>
+
+                          {isEditingPlan ? (
+                            <div className="grid gap-3 rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] p-4">
+                              <label className="grid gap-2 text-sm">
+                                <span className="text-[var(--ui-muted)]">Nuevo plan o ajuste</span>
+                                <select className="rounded-[16px] border border-[var(--ui-border)] bg-white px-4 py-3 text-sm" value={assignPlanForm.plan_id} onChange={(e) => setAssignPlanForm((p) => ({ ...p, plan_id: e.target.value }))}>
+                                  <option value="">Selecciona plan</option>
+                                  {availableLicensePlans.map((plan) => (
+                                    <option key={plan.id} value={plan.id}>{plan.nombre} ({plan.codigo})</option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3 text-xs text-[var(--ui-muted)]">
+                                <p><span className="font-semibold text-[var(--ui-foreground)]">Flujo guiado</span>: eliges el plan y guardas el ajuste con un solo botón.</p>
+                                <p className="mt-1">El <strong>TRIAL</strong> dura 14 días exactos y los demás planes se activan por 1 mes calendario exacto.</p>
+                              </div>
+
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <button type="button" onClick={handleAssignPlan} className="inline-flex items-center justify-center gap-2 rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
+                                  <FiCheckCircle size={14} /> Guardar ajuste
+                                </button>
+                                <button type="button" onClick={() => setIsEditingPlan(false)} className="inline-flex items-center justify-center gap-2 rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-sm font-semibold text-[var(--ui-foreground)]">
+                                  <FiX size={14} /> Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-xs text-[var(--ui-muted)]">
+                              Usa <strong className="text-[var(--ui-foreground)]">Modificar plan</strong> para cambiar o ajustar la licencia, y el botón de tacho para eliminar el plan actual.
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="grid gap-3">
-                      <p className="text-sm font-semibold">Crear nuevo ADMIN</p>
-                      <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Email" value={adminForm.email} onChange={(e) => setAdminForm((p) => ({ ...p, email: e.target.value }))} />
-                      <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="DNI" value={adminForm.dni} onChange={(e) => setAdminForm((p) => ({ ...p, dni: e.target.value.replace(/\D/g, '').slice(0, 8) }))} />
-                      <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" type="password" placeholder="Contraseña" value={adminForm.password} onChange={(e) => setAdminForm((p) => ({ ...p, password: e.target.value }))} />
-                      <button type="button" onClick={handleCreateAdmin} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">Crear ADMIN</button>
+
+                    <div className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                      <p className="text-sm font-semibold text-[var(--ui-foreground)]">Historial de licenciamiento / facturación</p>
+                      {historialClinica.length === 0 ? (
+                        <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin historial de suscripciones o licencias registradas todavía.</p>
+                      ) : (
+                        <div className="mt-3 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                          {historialClinica.map((item) => (
+                            <article key={item.id} className="rounded-[16px] bg-[var(--ui-card)] px-4 py-3">
+                              <p className="font-semibold text-[var(--ui-foreground)]">{item.plan_nombre || item.plan_codigo || 'Plan desconocido'}</p>
+                              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--ui-muted)]">
+                                <span>Estado: {item.estado}</span>
+                                <span>Inicio: {formatDate(item.periodo_actual_inicio)}</span>
+                                <span>Fin: {formatDate(item.periodo_actual_fin)}</span>
+                                <span>Registro: {formatDate(item.created_at)}</span>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Surface>
 
-                <Surface eyebrow="Usuarios" title={`Usuarios de ${selectedClinica.nombre}`} description="Visualiza y gestiona todos los usuarios vinculados a esta clínica.">
-                  {usuariosPorClinica.length === 0 && <p className="text-sm text-[var(--ui-muted)]">No hay usuarios asociados a esta clínica.</p>}
-                  {usuariosPorClinica.length > 0 && (
-                    <div className="space-y-3">
-                      {usuariosPorClinica.map((user) => (
-                        <article key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-[var(--ui-card)] px-4 py-3">
-                          <div>
-                            <p className="font-semibold text-[var(--ui-foreground)]">{user.email}</p>
-                            <p className="text-xs text-[var(--ui-muted)]">Rol: {user.rol} • Estado: {user.estado}</p>
-                          </div>
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => startEditUser(user)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Editar usuario">
-                              <FiEdit2 size={14} />
-                            </button>
-                            <button type="button" onClick={() => handleToggleUsuario(user)} className="rounded-full bg-[var(--ui-warning)] p-2 text-white" aria-label="Activar o desactivar usuario">
-                              <FiUser size={14} />
-                            </button>
-                            {user.rol !== 'SUPERADMIN' && (
-                              <button type="button" onClick={() => handleDeleteUser(user)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white" aria-label="Eliminar usuario">
-                                <FiTrash2 size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </Surface>
+                <Surface
+                  eyebrow="Usuarios"
+                  title={`Usuarios y gestión de ${selectedClinica.nombre}`}
+                  description="La lista queda visible siempre y el bloque lateral cambia solo cuando agregas o editas un usuario."
+                  action={
+                    <button
+                      type="button"
+                      onClick={startCreateUser}
+                      className="inline-flex items-center gap-2 rounded-full bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      <FiPlus size={14} /> Nuevo usuario
+                    </button>
+                  }
+                >
+                  <div className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
+                    <div>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        <span className="rounded-full bg-[var(--ui-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-accent)]">Total usuarios: {usuariosPorClinica.length}</span>
+                        <span className="rounded-full bg-[var(--ui-surface-strong)] px-3 py-1 text-xs font-semibold text-[var(--ui-foreground)]">Admins: {adminsPorClinica.length}</span>
+                      </div>
 
-                {historialClinica.length > 0 && (
-                  <Surface eyebrow="Historial" title="Suscripciones de esta clínica" description="Registro completo de suscripciones asociadas.">
-                    <div className="max-h-[360px] space-y-3 overflow-auto pr-1">
-                      {historialClinica.map((item) => (
-                        <article key={item.id} className="rounded-[16px] bg-[var(--ui-card)] px-4 py-3">
-                          <p className="font-semibold">{item.plan_nombre || item.plan_codigo || 'Plan desconocido'}</p>
-                          <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--ui-muted)]">
-                            <span>Estado: {item.estado}</span>
-                            <span>Inicio: {formatDate(item.periodo_actual_inicio)}</span>
-                            <span>Fin: {formatDate(item.periodo_actual_fin)}</span>
-                            <span>Registro: {formatDate(item.created_at)}</span>
-                          </div>
-                        </article>
-                      ))}
+                      {usuariosPorClinica.length === 0 ? (
+                        <p className="text-sm text-[var(--ui-muted)]">No hay usuarios asociados a esta clínica.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {usuariosPorClinica.map((user) => {
+                            const persona = user.persona_id ? personasById[user.persona_id] : null;
+                            const nombreVisible = getPersonaNombre({
+                              nombres: user.nombres || persona?.nombres,
+                              apellido_paterno: user.apellido_paterno || persona?.apellido_paterno,
+                              apellido_materno: user.apellido_materno || persona?.apellido_materno
+                            });
+                            const dniVisible = user.dni || persona?.dni || 'Sin DNI';
+
+                            return (
+                              <article key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-[var(--ui-card)] px-4 py-3">
+                                <div>
+                                  <p className="font-semibold text-[var(--ui-foreground)]">{nombreVisible}</p>
+                                  <p className="text-xs text-[var(--ui-muted)]">DNI: {dniVisible} • {user.email}</p>
+                                  <p className="mt-1 text-xs text-[var(--ui-muted)]">Rol: {user.rol} • Estado: {user.estado}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={() => startEditUser(user)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Editar usuario">
+                                    <FiEdit2 size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleUsuario(user)}
+                                    className={`rounded-full p-2 text-white ${user.estado === 'ACTIVO' ? 'bg-[var(--ui-danger)]' : 'bg-emerald-600'}`}
+                                    aria-label={user.estado === 'ACTIVO' ? 'Desactivar usuario' : 'Reactivar usuario'}
+                                    title={user.estado === 'ACTIVO' ? 'Desactivar usuario' : 'Reactivar usuario'}
+                                  >
+                                    <FiUser size={14} />
+                                  </button>
+                                  {user.rol !== 'SUPERADMIN' && (
+                                    <button type="button" onClick={() => handleDeleteUser(user)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white" aria-label="Eliminar usuario">
+                                      <FiTrash2 size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </Surface>
-                )}
+
+                    <div className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                      {userEditorMode === 'edit' && editingUser ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-[var(--ui-foreground)]">Editar usuario</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingUser(null);
+                                setUserEditorMode(null);
+                              }}
+                              className="rounded-full bg-[var(--ui-card)] p-2"
+                              aria-label="Cerrar edición"
+                            >
+                              <FiX size={14} />
+                            </button>
+                          </div>
+                          <div className="mt-3 grid gap-3">
+                            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                              <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={editingUser.dni} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, dni: e.target.value.replace(/\D/g, '').slice(0, 8) } : prev))} placeholder="DNI" />
+                              <button type="button" onClick={handleSearchEditPersona} className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm font-semibold text-[var(--ui-foreground)]">
+                                Buscar DNI
+                              </button>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <input readOnly className="rounded-[16px] border border-[var(--ui-border)] bg-slate-100 px-4 py-3 text-sm text-[var(--ui-foreground)]" value={editingUser.nombres} placeholder="Nombres" />
+                              <input readOnly className="rounded-[16px] border border-[var(--ui-border)] bg-slate-100 px-4 py-3 text-sm text-[var(--ui-foreground)]" value={editingUser.apellido_paterno} placeholder="Apellido paterno" />
+                              <input readOnly className="rounded-[16px] border border-[var(--ui-border)] bg-slate-100 px-4 py-3 text-sm text-[var(--ui-foreground)] md:col-span-2" value={editingUser.apellido_materno} placeholder="Apellido materno" />
+                            </div>
+                            <p className="text-xs text-[var(--ui-muted)]">Los datos de persona se obtienen por DNI y aquí solo se muestran en modo lectura.</p>
+                            <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={editingUser.email} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, email: e.target.value } : prev))} placeholder="Email" />
+                            <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={editingUser.rol} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, rol: e.target.value as Usuario['rol'] } : prev))} disabled={editingUser.rol === 'SUPERADMIN'}>
+                              <option value="ADMIN">ADMIN</option>
+                              <option value="DOCTOR">DOCTOR</option>
+                              <option value="STAFF">STAFF</option>
+                              <option value="SUPERADMIN">SUPERADMIN</option>
+                            </select>
+                            <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={editingUser.estado} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, estado: e.target.value as 'ACTIVO' | 'INACTIVO' } : prev))}>
+                              <option value="ACTIVO">ACTIVO</option>
+                              <option value="INACTIVO">INACTIVO</option>
+                            </select>
+                            <input type="password" className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={editingUser.password} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, password: e.target.value } : prev))} placeholder="Nueva contraseña (opcional)" />
+                            <button type="button" onClick={handleSaveUser} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">Guardar cambios del usuario</button>
+                          </div>
+                        </>
+                      ) : userEditorMode === 'create' ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-[var(--ui-foreground)]">Nuevo usuario para la clínica</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCreatePersonaPreview(null);
+                                setUserEditorMode(null);
+                              }}
+                              className="rounded-full bg-[var(--ui-card)] p-2"
+                              aria-label="Cerrar creación"
+                            >
+                              <FiX size={14} />
+                            </button>
+                          </div>
+                          <div className="mt-3 grid gap-3">
+                            <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={adminForm.rol} onChange={(e) => setAdminForm((p) => ({ ...p, rol: e.target.value as 'ADMIN' | 'DOCTOR' | 'STAFF' }))}>
+                              <option value="ADMIN">ADMIN</option>
+                              <option value="DOCTOR">DOCTOR</option>
+                              <option value="STAFF">STAFF</option>
+                            </select>
+                            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                              <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="DNI" value={adminForm.dni} onChange={(e) => {
+                                const nextDni = e.target.value.replace(/\D/g, '').slice(0, 8);
+                                setCreatePersonaPreview(null);
+                                setAdminForm((p) => ({ ...p, dni: nextDni }));
+                              }} />
+                              <button type="button" onClick={handleSearchCreatePersona} className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm font-semibold text-[var(--ui-foreground)]">
+                                Buscar DNI
+                              </button>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <input readOnly className="rounded-[16px] border border-[var(--ui-border)] bg-slate-100 px-4 py-3 text-sm text-[var(--ui-foreground)]" value={createPersonaPreview?.nombres || ''} placeholder="Nombres" />
+                              <input readOnly className="rounded-[16px] border border-[var(--ui-border)] bg-slate-100 px-4 py-3 text-sm text-[var(--ui-foreground)]" value={createPersonaPreview?.apellido_paterno || ''} placeholder="Apellido paterno" />
+                              <input readOnly className="rounded-[16px] border border-[var(--ui-border)] bg-slate-100 px-4 py-3 text-sm text-[var(--ui-foreground)] md:col-span-2" value={createPersonaPreview?.apellido_materno || ''} placeholder="Apellido materno" />
+                            </div>
+                            <p className="text-xs text-[var(--ui-muted)]">Los datos de persona se completan con la búsqueda por DNI y no se editan desde aquí.</p>
+                            <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Email" value={adminForm.email} onChange={(e) => setAdminForm((p) => ({ ...p, email: e.target.value }))} />
+                            <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" type="password" placeholder="Contraseña" value={adminForm.password} onChange={(e) => setAdminForm((p) => ({ ...p, password: e.target.value }))} />
+                            <button type="button" onClick={handleCreateAdmin} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">Crear {adminForm.rol}</button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="rounded-[16px] border border-dashed border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-6 text-sm text-[var(--ui-muted)]">
+                          Selecciona un usuario de la lista para editarlo o usa el botón <strong className="text-[var(--ui-foreground)]">Nuevo usuario</strong> para añadir un ADMIN, DOCTOR o STAFF.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Surface>
               </>
             )}
 
             {/* ====== SUSCRIPCIONES ====== */}
             {section === 'suscripciones' && (
-              <section className="grid gap-6 2xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,0.95fr)]">
-                <Surface eyebrow="Billing" title="Suscripciones y CRUD de planes" description="Gestiona suscripciones por clínica y administra los planes (crear, editar, eliminar/inactivar).">
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <div className="rounded-[24px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
-                      <h4 className="text-lg font-semibold">Asignar plan a clínica</h4>
-                      <div className="mt-4 grid gap-3">
-                        <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={assignPlanForm.clinica_id} onChange={(e) => setAssignPlanForm((p) => ({ ...p, clinica_id: e.target.value }))}>
-                          <option value="">Selecciona clínica</option>
-                          {clinicas.map((clinica) => (
-                            <option key={clinica.id} value={clinica.id}>{clinica.nombre}</option>
-                          ))}
-                        </select>
-                        <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={assignPlanForm.plan_id} onChange={(e) => setAssignPlanForm((p) => ({ ...p, plan_id: e.target.value }))}>
-                          <option value="">Selecciona plan</option>
-                          {planes.filter((plan) => plan.estado === 'ACTIVO').map((plan) => (
-                            <option key={plan.id} value={plan.id}>{plan.nombre} ({plan.codigo})</option>
-                          ))}
-                        </select>
-                        <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={assignPlanForm.estado} onChange={(e) => setAssignPlanForm((p) => ({ ...p, estado: e.target.value as typeof p.estado }))}>
-                          <option value="TRIAL">TRIAL</option>
-                          <option value="ACTIVA">ACTIVA</option>
-                          <option value="PAST_DUE">PAST_DUE</option>
-                          <option value="SUSPENDIDA">SUSPENDIDA</option>
-                          <option value="CANCELADA">CANCELADA</option>
-                          <option value="EXPIRADA">EXPIRADA</option>
-                        </select>
-                        <div className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-xs text-[var(--ui-muted)]">
-                          TRIAL: 14 días. Otros estados: 1 mes calendario exacto.
+              <section className="grid gap-6">
+                <Surface eyebrow="Suscripciones" title="Resumen breve por plan" description="Aquí ves cada suscripción/plan con un indicador rápido de las clínicas que la tienen activa.">
+                  <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+                    {subscriptionPlanSummaries.map(({ plan, totalClinicas, clinicaNames }) => (
+                      <article key={plan.id} className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-[var(--ui-foreground)]">{plan.nombre}</p>
+                            <p className="text-xs text-[var(--ui-muted)]">{plan.codigo}</p>
+                          </div>
+                          <span className="rounded-full bg-[var(--ui-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-accent)]">
+                            {totalClinicas} clínicas
+                          </span>
                         </div>
-                        <button type="button" onClick={handleAssignPlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">Guardar suscripción</button>
-                      </div>
-                    </div>
+                        <p className="mt-3 text-xs text-[var(--ui-muted)]">
+                          {totalClinicas > 0 ? 'Clínicas activas con este plan:' : 'Actualmente no hay clínicas activas con esta suscripción.'}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {clinicaNames.length > 0 ? clinicaNames.map((name) => (
+                            <span key={`${plan.id}-${name}`} className="rounded-full bg-[var(--ui-card)] px-3 py-1 text-xs font-semibold text-[var(--ui-foreground)]">
+                              {name}
+                            </span>
+                          )) : (
+                            <span className="text-xs text-[var(--ui-muted)]">Sin clínicas activas</span>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </Surface>
 
-                    <div className="rounded-[24px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <h4 className="text-lg font-semibold">{editingPlanId ? 'Editar plan' : 'Crear plan'}</h4>
-                        {editingPlanId && (
-                          <button type="button" onClick={() => { setEditingPlanId(null); setPlanForm(INITIAL_PLAN_FORM); }} className="rounded-full bg-[var(--ui-card)] p-2" aria-label="Cancelar edición">
-                            <FiX size={14} />
-                          </button>
+                <Surface
+                  eyebrow="Planes"
+                  title="Crear, modificar o eliminar planes"
+                  description="El bloque cambia completo entre listado y edición, y ya no se muestra el historial general."
+                  action={
+                    <div className="flex h-10 w-10 items-center justify-center">
+                      {!showPlanEditor ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPlanId(null);
+                            setPlanForm(INITIAL_PLAN_FORM);
+                            setShowPlanEditor(true);
+                          }}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--ui-accent)] text-white"
+                          aria-label="Agregar plan"
+                          title="Nuevo plan"
+                        >
+                          <FiPlus size={18} />
+                        </button>
+                      ) : (
+                        <span className="block h-10 w-10" aria-hidden="true" />
+                      )}
+                    </div>
+                  }
+                >
+                  {!showPlanEditor ? (
+                    <div className="flex h-[460px] flex-col space-y-3">
+                      <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+                        {planes.length} planes registrados. Usa el botón <span className="font-semibold text-[var(--ui-foreground)]">+</span> para crear uno nuevo.
+                      </div>
+
+                      <div className="flex-1 space-y-3 overflow-y-auto pr-2">
+                        {planes.length === 0 ? (
+                          <div className="rounded-[20px] border border-dashed border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 text-sm text-[var(--ui-muted)]">
+                            Aún no hay planes registrados. Usa el botón <span className="font-semibold text-[var(--ui-foreground)]">+</span> para crear el primero.
+                          </div>
+                        ) : (
+                          subscriptionPlanSummaries.map(({ plan, totalClinicas, clinicaNames }) => (
+                            <article key={plan.id} className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-base font-semibold text-[var(--ui-foreground)]">{plan.nombre}</p>
+                                  <p className="text-xs text-[var(--ui-muted)]">{plan.codigo}</p>
+                                </div>
+                                <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${plan.estado === 'ACTIVO' ? 'bg-emerald-500/14 text-[var(--ui-success)]' : 'bg-rose-500/14 text-[var(--ui-danger)]'}`}>
+                                  {plan.estado}
+                                </span>
+                              </div>
+
+                              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                <div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Precio mensual</p>
+                                  <p className="mt-1 text-sm text-[var(--ui-foreground)]">{plan.precio_mensual != null ? `${plan.moneda || 'PEN'} ${plan.precio_mensual}` : 'No definido'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Trial</p>
+                                  <p className="mt-1 text-sm text-[var(--ui-foreground)]">{plan.dias_trial || 0} días</p>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ui-muted)]">Clínicas activas</p>
+                                  <p className="mt-1 text-sm text-[var(--ui-foreground)]">{totalClinicas}</p>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {clinicaNames.length > 0 ? clinicaNames.map((name) => (
+                                  <span key={`${plan.id}-${name}`} className="rounded-full bg-[var(--ui-card)] px-3 py-1 text-xs font-semibold text-[var(--ui-foreground)]">
+                                    {name}
+                                  </span>
+                                )) : (
+                                  <span className="text-xs text-[var(--ui-muted)]">Sin clínicas activas con este plan</span>
+                                )}
+                              </div>
+
+                              <div className="mt-3 flex items-center gap-2">
+                                <button type="button" onClick={() => handleEditPlan(plan)} className="inline-flex items-center gap-1 rounded-full bg-[var(--ui-card)] px-3 py-1.5 text-xs font-semibold text-[var(--ui-foreground)]">
+                                  <FiEdit2 size={12} /> Editar
+                                </button>
+                                <button type="button" onClick={() => handleDeletePlan(plan)} className="inline-flex items-center gap-1 rounded-full bg-rose-500/14 px-3 py-1.5 text-xs font-semibold text-[var(--ui-danger)]">
+                                  <FiTrash2 size={12} /> Eliminar
+                                </button>
+                              </div>
+                            </article>
+                          ))
                         )}
                       </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-[460px] flex-col overflow-y-auto rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[var(--ui-foreground)]">{editingPlanId ? 'Editar plan seleccionado' : 'Nuevo plan'}</p>
+                          <p className="mt-1 text-xs text-[var(--ui-muted)]">Este mismo bloque cambia completo para crear o editar el plan.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPlanId(null);
+                            setPlanForm(INITIAL_PLAN_FORM);
+                            setShowPlanEditor(false);
+                          }}
+                          className="rounded-full bg-[var(--ui-card)] p-2"
+                          aria-label="Cancelar edición"
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
+
                       <div className="mt-4 grid gap-3">
                         <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Código" value={planForm.codigo} onChange={(e) => setPlanForm((p) => ({ ...p, codigo: e.target.value }))} />
                         <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Nombre" value={planForm.nombre} onChange={(e) => setPlanForm((p) => ({ ...p, nombre: e.target.value }))} />
@@ -1893,110 +2541,27 @@ export default function SuperadminDashboardClient() {
                           <option value="ACTIVO">ACTIVO</option>
                           <option value="INACTIVO">INACTIVO</option>
                         </select>
-                        <button type="button" onClick={handleSavePlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
-                          {editingPlanId ? 'Actualizar plan' : 'Crear plan'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="mt-4 overflow-hidden rounded-[24px] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-[var(--ui-surface-strong)] text-left text-[var(--ui-muted)]">
-                        <tr>
-                          <th className="px-4 py-3 font-semibold">Plan</th>
-                          <th className="px-4 py-3 font-semibold">Estado</th>
-                          <th className="px-4 py-3 font-semibold">Trial</th>
-                          <th className="px-4 py-3 font-semibold">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {planes.map((plan) => (
-                          <tr key={plan.id} className="border-t border-[var(--ui-border)]">
-                            <td className="px-4 py-3">
-                              <p className="font-semibold">{plan.nombre}</p>
-                              <p className="text-xs text-[var(--ui-muted)]">{plan.codigo}</p>
-                            </td>
-                            <td className="px-4 py-3">{plan.estado}</td>
-                            <td className="px-4 py-3">{plan.dias_trial || 0} días</td>
-                            <td className="px-4 py-3">
-                              <div className="flex gap-2">
-                                <button type="button" onClick={() => handleEditPlan(plan)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Editar plan"><FiEdit2 size={14} /></button>
-                                <button type="button" onClick={() => handleDeletePlan(plan)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white" aria-label="Eliminar plan"><FiTrash2 size={14} /></button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </Surface>
-
-                <div className="space-y-6">
-                  <Surface
-                    eyebrow="Clínicas"
-                    title="Selección para historial"
-                    description="Selecciona una clínica para ver su historial de suscripciones."
-                    action={<span className="inline-flex items-center gap-2 rounded-full bg-[var(--ui-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-accent)]"><FiCheckCircle size={14} /> Selección activa</span>}
-                  >
-                    <div className="max-h-[300px] space-y-3 overflow-auto pr-1">
-                      {clinicas.map((clinica) => {
-                        const sub = suscripciones.find((s) => s.clinica_id === clinica.id) || null;
-                        const badge = getSubBadge(sub);
-                        const isSelected = selectedClinicaId === clinica.id;
-                        return (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={handleSavePlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
+                            {editingPlanId ? 'Guardar cambios' : 'Crear plan'}
+                          </button>
                           <button
-                            key={clinica.id}
                             type="button"
                             onClick={() => {
-                              setSelectedClinicaId(clinica.id);
-                              setAssignPlanForm((prev) => ({ ...prev, clinica_id: clinica.id }));
+                              setEditingPlanId(null);
+                              setPlanForm(INITIAL_PLAN_FORM);
+                              setShowPlanEditor(false);
                             }}
-                            className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${
-                              isSelected
-                                ? 'border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]'
-                                : 'border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-surface-strong)]'
-                            }`}
+                            className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm font-semibold text-[var(--ui-foreground)]"
                           >
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <p className="font-semibold text-[var(--ui-foreground)]">{clinica.nombre}</p>
-                                <p className="mt-1 text-xs text-[var(--ui-muted)]">{clinica.tipo_negocio_nombre || clinica.tipo_negocio_codigo || 'Sin tipo'}</p>
-                              </div>
-                              <FiChevronRight className="mt-0.5 text-[var(--ui-muted)]" />
-                            </div>
-                            <div className="mt-3 flex items-center justify-between gap-3">
-                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${badge.cls}`}>{badge.label}</span>
-                              <span className="text-xs text-[var(--ui-muted)]">{clinica.estado}</span>
-                            </div>
+                            Cancelar
                           </button>
-                        );
-                      })}
-                    </div>
-                  </Surface>
-
-                  <Surface eyebrow="Historial" title="Historial de suscripciones" description="Registro de suscripciones de la clínica seleccionada.">
-                    {!selectedClinica && <p className="text-sm text-[var(--ui-muted)]">Selecciona una clínica para ver historial.</p>}
-                    {selectedClinica && (
-                      <div className="max-h-[360px] space-y-3 overflow-auto pr-1">
-                        {historialClinica.length === 0 && (
-                          <p className="rounded-[16px] bg-[var(--ui-card)] px-4 py-3 text-sm text-[var(--ui-muted)]">Sin historial para esta clínica.</p>
-                        )}
-                        {historialClinica.map((item) => (
-                          <article key={item.id} className="rounded-[16px] bg-[var(--ui-card)] px-4 py-3">
-                            <p className="font-semibold">{item.plan_nombre || item.plan_codigo || 'Plan desconocido'}</p>
-                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--ui-muted)]">
-                              <span>Estado: {item.estado}</span>
-                              <span>Inicio: {formatDate(item.periodo_actual_inicio)}</span>
-                              <span>Fin: {formatDate(item.periodo_actual_fin)}</span>
-                              <span>Registro: {formatDate(item.created_at)}</span>
-                            </div>
-                          </article>
-                        ))}
+                        </div>
                       </div>
-                    )}
-                  </Surface>
-                </div>
+                    </div>
+                  )}
+                </Surface>
               </section>
             )}
 
@@ -2049,7 +2614,13 @@ export default function SuperadminDashboardClient() {
                             <td className="px-4 py-3">
                               <div className="flex gap-2">
                                 <button type="button" onClick={() => startEditUser(user)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Editar usuario"><FiEdit2 size={14} /></button>
-                                <button type="button" onClick={() => handleToggleUsuario(user)} className="rounded-full bg-[var(--ui-warning)] p-2 text-white" aria-label="Activar o desactivar"><FiUser size={14} /></button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleUsuario(user)}
+                                  className={`rounded-full p-2 text-white ${user.estado === 'ACTIVO' ? 'bg-[var(--ui-danger)]' : 'bg-emerald-600'}`}
+                                  aria-label={user.estado === 'ACTIVO' ? 'Desactivar usuario' : 'Reactivar usuario'}
+                                  title={user.estado === 'ACTIVO' ? 'Desactivar usuario' : 'Reactivar usuario'}
+                                ><FiUser size={14} /></button>
                                 {user.id !== session.id && (
                                   <button type="button" onClick={() => handleDeleteUser(user)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white" aria-label="Eliminar usuario"><FiTrash2 size={14} /></button>
                                 )}
@@ -2065,7 +2636,7 @@ export default function SuperadminDashboardClient() {
             )}
 
             {/* ====== EDITAR USUARIO ====== */}
-            {editingUser && (
+            {editingUser && section === 'usuarios' && (
               <Surface
                 eyebrow="Usuario"
                 title="Editar usuario"
@@ -2077,6 +2648,19 @@ export default function SuperadminDashboardClient() {
                 }
               >
                 <div className="grid gap-3">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <input className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm" value={editingUser.dni} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, dni: e.target.value.replace(/\D/g, '').slice(0, 8) } : prev))} placeholder="DNI" />
+                    <button type="button" onClick={handleSearchEditPersona} className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)]">
+                      Buscar DNI
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input readOnly className="rounded-[14px] border border-[var(--ui-border)] bg-slate-100 px-3 py-2 text-sm text-[var(--ui-foreground)]" value={editingUser.nombres} placeholder="Nombres" />
+                    <input readOnly className="rounded-[14px] border border-[var(--ui-border)] bg-slate-100 px-3 py-2 text-sm text-[var(--ui-foreground)]" value={editingUser.apellido_paterno} placeholder="Apellido paterno" />
+                    <input readOnly className="rounded-[14px] border border-[var(--ui-border)] bg-slate-100 px-3 py-2 text-sm text-[var(--ui-foreground)] md:col-span-2" value={editingUser.apellido_materno} placeholder="Apellido materno" />
+                  </div>
+
                   <input className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm" value={editingUser.email} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, email: e.target.value } : prev))} />
 
                   <select

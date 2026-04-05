@@ -3,9 +3,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FiCreditCard, FiHome, FiLayers, FiLogIn, FiMail, FiMoon, FiSun } from 'react-icons/fi';
+import { FiCreditCard, FiHome, FiLayers, FiLogIn, FiMail } from 'react-icons/fi';
 import { HiOutlineRocketLaunch } from 'react-icons/hi2';
-import { useThemeMode } from '../hooks/use-theme-mode';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Inicio', icon: <FiHome /> },
@@ -16,9 +15,6 @@ const NAV_ITEMS = [
 
 export default function MarketingNavbar() {
   const pathname = usePathname();
-  const { themeMode, resolvedTheme, setThemeMode } = useThemeMode();
-  const isLightActive = themeMode === 'light' || (themeMode === 'system' && resolvedTheme === 'light');
-  const isDarkActive = themeMode === 'dark' || (themeMode === 'system' && resolvedTheme === 'dark');
 
   return (
     <header className="marketing-header" aria-label="Barra principal">
@@ -44,29 +40,6 @@ export default function MarketingNavbar() {
         </nav>
 
         <div className="marketing-header-actions">
-          <div className="marketing-theme-toggle" role="group" aria-label="Seleccionar tema">
-            <button
-              type="button"
-              className={`marketing-theme-btn ${isLightActive ? 'is-active' : ''}`}
-              suppressHydrationWarning
-              onClick={() => setThemeMode('light')}
-              aria-label="Modo claro"
-              title="Modo claro"
-            >
-              <FiSun />
-            </button>
-            <button
-              type="button"
-              className={`marketing-theme-btn ${isDarkActive ? 'is-active' : ''}`}
-              suppressHydrationWarning
-              onClick={() => setThemeMode('dark')}
-              aria-label="Modo oscuro"
-              title="Modo oscuro"
-            >
-              <FiMoon />
-            </button>
-          </div>
-
           <Link href="/login" className="marketing-login-btn">
             <FiLogIn aria-hidden="true" />
             Iniciar sesión
