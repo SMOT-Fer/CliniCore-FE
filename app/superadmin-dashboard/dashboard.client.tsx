@@ -17,7 +17,6 @@ import {
   FiHome,
   FiLayers,
   FiLogOut,
-  FiRefreshCw,
   FiShield,
   FiTrash2,
   FiPlus,
@@ -413,7 +412,6 @@ export default function SuperadminDashboardClient() {
   const [clinicaView, setClinicaView] = useState<'list' | 'detail' | 'create'>('list');
   const [clinicasPage, setClinicasPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [clinicas, setClinicas] = useState<Clinica[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -472,6 +470,7 @@ export default function SuperadminDashboardClient() {
   const [showPlanEditor, setShowPlanEditor] = useState(false);
 
   const [editingUser, setEditingUser] = useState<UserEditState | null>(null);
+  const [viewingUserSessions, setViewingUserSessions] = useState<string | null>(null);
   const [tipoForm, setTipoForm] = useState({ codigo: '', nombre: '' });
   const [editingTipoId, setEditingTipoId] = useState<string | null>(null);
   const [showTipoEditor, setShowTipoEditor] = useState(false);
@@ -837,20 +836,6 @@ export default function SuperadminDashboardClient() {
     setAssignPlanForm((prev) => ({ ...prev, clinica_id: selectedClinicaId }));
   }, [selectedClinicaId]);
 
-  const refreshData = useCallback(async () => {
-    setIsRefreshing(true);
-    try {
-      await loadAllData();
-      if (selectedClinicaId) {
-        await loadHistorialClinica(selectedClinicaId);
-      }
-    } catch {
-      notify('No se pudo refrescar el panel', 'error');
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [loadAllData, loadHistorialClinica, notify, selectedClinicaId]);
-
   const startCreateUser = useCallback(() => {
     setEditingUser(null);
     setUserEditorMode('create');
@@ -969,6 +954,7 @@ export default function SuperadminDashboardClient() {
       const selectedInitialPlan = availableLicensePlans.find((plan) => plan.id === createClinica.plan_id);
       const automaticInitialEstado = selectedInitialPlan?.codigo === 'TRIAL_CLINICA' ? 'TRIAL' : 'ACTIVA';
 
+      let nuevaSuscripcion = null;
       if (nuevaClinicaId && createClinica.plan_id) {
         const assignRes = await fetch('/api/backend/platform/suscripciones/asignar', {
           method: 'POST',
@@ -985,16 +971,34 @@ export default function SuperadminDashboardClient() {
         if (!assignRes.ok || !assignPayload?.success) {
           throw new Error(assignPayload?.error || 'La clinica se creó pero no se pudo asignar la suscripcion inicial');
         }
+        nuevaSuscripcion = assignPayload?.data;
+      }
+
+      // Actualizar localmente sin recargar todo
+      const nuevaClinica: Clinica = {
+        id: nuevaClinicaId,
+        nombre: createClinica.nombre.trim(),
+        tipo_negocio_id: createClinica.tipo_negocio_id,
+        ruc: createClinica.ruc.trim() || null,
+        direccion: createClinica.direccion.trim() || null,
+        telefono: createClinica.telefono.trim() || null,
+        estado: createClinica.estado,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      setClinicas((prev) => [...prev, nuevaClinica]);
+      
+      if (nuevaSuscripcion) {
+        setSuscripciones((prev) => [...prev, nuevaSuscripcion]);
       }
 
       notify(createClinica.plan_id ? 'Clinica y suscripcion inicial creadas correctamente' : 'Clinica creada con trial inicial de 14 dias', 'success');
       resetCreateClinicaForm();
       setClinicaView('list');
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al crear clinica', 'error');
     }
-  }, [availableLicensePlans, createClinica, notify, refreshData, resetCreateClinicaForm]);
+  }, [availableLicensePlans, createClinica, notify, resetCreateClinicaForm]);
 
   const handleUpdateClinica = useCallback(async () => {
     if (!selectedClinicaId) return;
@@ -1018,13 +1022,30 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo actualizar la clinica');
 
+      // Actualizar localmente sin recargar todo
+      setClinicas((prev) =>
+        prev.map((c) =>
+          c.id === selectedClinicaId
+            ? {
+                ...c,
+                nombre: editClinica.nombre.trim() || c.nombre,
+                ruc: editClinica.ruc.trim() || c.ruc,
+                direccion: editClinica.direccion.trim() || c.direccion,
+                telefono: editClinica.telefono.trim() || c.telefono,
+                tipo_negocio_id: editClinica.tipo_negocio_id || c.tipo_negocio_id,
+                estado: editClinica.estado,
+                updated_at: new Date().toISOString()
+              }
+            : c
+        )
+      );
+
       notify('Clinica actualizada', 'success');
       setIsEditingClinica(false);
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al actualizar clinica', 'error');
     }
-  }, [editClinica, notify, refreshData, selectedClinicaId]);
+  }, [editClinica, notify, selectedClinicaId]);
 
   const handleClinicaLifecycle = useCallback(async (action: 'desactivar' | 'reactivar' | 'eliminar') => {
     if (!selectedClinicaId) return;
@@ -1050,12 +1071,24 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || `No se pudo ${label} la clinica`);
 
+      // Actualizar localmente sin recargar todo
+      if (action === 'eliminar') {
+        setClinicas((prev) => prev.filter((c) => c.id !== selectedClinicaId));
+        setSuscripciones((prev) => prev.filter((s) => s.clinica_id !== selectedClinicaId));
+        setUsuarios((prev) => prev.filter((u) => u.clinica_id !== selectedClinicaId));
+        setSelectedClinicaId(null);
+      } else {
+        const nuevoEstado = action === 'desactivar' ? 'INACTIVA' : 'ACTIVA';
+        setClinicas((prev) =>
+          prev.map((c) => (c.id === selectedClinicaId ? { ...c, estado: nuevoEstado, updated_at: new Date().toISOString() } : c))
+        );
+      }
+
       notify(`Clinica ${label}da correctamente`, 'success');
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : `Error al ${label} clinica`, 'error');
     }
-  }, [notify, refreshData, selectedClinicaId]);
+  }, [notify, selectedClinicaId]);
 
   const handleCreateAdmin = useCallback(async () => {
     if (!selectedClinicaId) return;
@@ -1089,15 +1122,31 @@ export default function SuperadminDashboardClient() {
       const createPayload = await createRes.json().catch(() => null);
       if (!createRes.ok || !createPayload?.success) throw new Error(createPayload?.error || 'No se pudo crear el usuario');
 
+      // Actualizar localmente sin recargar todo
+      const nuevoUsuario: Usuario = {
+        id: createPayload?.data?.id || crypto.randomUUID(),
+        clinica_id: selectedClinicaId,
+        persona_id: persona.id,
+        email: adminForm.email.trim(),
+        rol: adminForm.rol,
+        estado: 'ACTIVO',
+        nombres: persona.nombres,
+        apellido_paterno: persona.apellido_paterno,
+        apellido_materno: persona.apellido_materno,
+        dni: persona.dni,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      setUsuarios((prev) => [...prev, nuevoUsuario]);
+
       notify(`${adminForm.rol} creado correctamente`, 'success');
       setAdminForm({ email: '', dni: '', password: '', rol: 'ADMIN' });
       setCreatePersonaPreview(null);
       setUserEditorMode(null);
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al crear usuario', 'error');
     }
-  }, [adminForm, createPersonaPreview, notify, refreshData, resolvePersonaByDni, selectedClinicaId]);
+  }, [adminForm, createPersonaPreview, notify, resolvePersonaByDni, selectedClinicaId]);
 
   const handleAssignPlan = useCallback(async () => {
     if (!assignPlanForm.clinica_id || !assignPlanForm.plan_id) {
@@ -1124,12 +1173,23 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo asignar suscripcion');
 
+      // Actualizar localmente sin recargar todo
+      const nuevaSuscripcion = payload?.data;
+      if (nuevaSuscripcion) {
+        setSuscripciones((prev) => {
+          const existingIndex = prev.findIndex((s) => s.clinica_id === assignPlanForm.clinica_id);
+          if (existingIndex >= 0) {
+            return prev.map((s, i) => (i === existingIndex ? nuevaSuscripcion : s));
+          }
+          return [...prev, nuevaSuscripcion];
+        });
+      }
+
       notify(automaticEstado === 'TRIAL' ? 'Trial asignado correctamente' : 'Plan activado correctamente', 'success');
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al asignar suscripcion', 'error');
     }
-  }, [assignPlanForm, availableLicensePlans, notify, refreshData]);
+  }, [assignPlanForm, availableLicensePlans, notify]);
 
   const handleRevokeCurrentPlan = useCallback(async () => {
     if (!selectedClinicaId || !selectedSuscripcion?.plan_id) {
@@ -1157,12 +1217,18 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo revocar el plan actual');
 
+      // Actualizar localmente sin recargar todo
+      setSuscripciones((prev) =>
+        prev.map((s) =>
+          s.clinica_id === selectedClinicaId ? { ...s, estado: 'CANCELADA', updated_at: new Date().toISOString() } : s
+        )
+      );
+
       notify('Plan revocado correctamente', 'success');
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al revocar el plan', 'error');
     }
-  }, [notify, refreshData, selectedClinicaId, selectedSuscripcion]);
+  }, [notify, selectedClinicaId, selectedSuscripcion]);
 
   const normalizePlanPayload = useCallback((form: PlanFormState) => {
     return {
@@ -1207,15 +1273,23 @@ export default function SuperadminDashboardClient() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.error || 'No se pudo guardar el plan');
 
+      const savedPlan = json.data as Plan;
+
+      // Actualizar localmente sin recargar todo
+      if (editingPlanId) {
+        setPlanes((prev) => prev.map((p) => (p.id === editingPlanId ? { ...p, ...savedPlan } : p)));
+      } else {
+        setPlanes((prev) => [...prev, savedPlan]);
+      }
+
       notify(editingPlanId ? 'Plan actualizado correctamente' : 'Plan creado correctamente', 'success');
       setPlanForm(INITIAL_PLAN_FORM);
       setEditingPlanId(null);
       setShowPlanEditor(false);
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al guardar plan', 'error');
     }
-  }, [editingPlanId, normalizePlanPayload, notify, planForm, refreshData]);
+  }, [editingPlanId, normalizePlanPayload, notify, planForm]);
 
   const handleEditPlan = useCallback((plan: Plan) => {
     setShowPlanEditor(true);
@@ -1253,12 +1327,14 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo eliminar plan');
 
-      notify(payload?.message || 'Plan procesado correctamente', 'success');
-      await refreshData();
+      // Actualizar localmente sin recargar todo
+      setPlanes((prev) => prev.filter((p) => p.id !== plan.id));
+
+      notify(payload?.message || 'Plan eliminado correctamente', 'success');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al eliminar plan', 'error');
     }
-  }, [notify, refreshData]);
+  }, [notify]);
 
   const startEditUser = useCallback(async (user: Usuario) => {
     const persona = user.persona_id ? personasById[user.persona_id] : null;
@@ -1341,14 +1417,17 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo actualizar usuario');
 
+      // Actualizar localmente sin recargar todo
+      const updatedUser = payload.data as Usuario;
+      setUsuarios((prev) => prev.map((u) => (u.id === editingUser.id ? { ...u, ...updatedUser } : u)));
+
       notify('Usuario actualizado correctamente', 'success');
       setEditingUser(null);
       setUserEditorMode(null);
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al actualizar usuario', 'error');
     }
-  }, [editingUser, notify, refreshData]);
+  }, [editingUser, notify]);
 
   const handleDeleteUser = useCallback(async (user: Usuario) => {
     if (!window.confirm(`¿Deseas eliminar permanentemente el usuario ${user.email}? Esta acción no se puede deshacer.`)) return;
@@ -1364,15 +1443,18 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo eliminar usuario');
 
+      // Actualizar localmente sin recargar todo
+      setUsuarios((prev) => prev.filter((u) => u.id !== user.id));
+
       notify(payload?.message || 'Usuario eliminado permanentemente', 'success');
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al eliminar usuario', 'error');
     }
-  }, [notify, refreshData]);
+  }, [notify]);
 
   const handleToggleUsuario = useCallback(async (user: Usuario) => {
     const endpoint = user.estado === 'ACTIVO' ? 'desactivar' : 'reactivar';
+    const newEstado = user.estado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO';
     try {
       const headers = await getCsrfHeaders();
       const res = await fetch(`/api/backend/usuarios/${user.id}/${endpoint}`, {
@@ -1383,12 +1465,41 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo actualizar usuario');
 
+      // Actualizar localmente sin recargar todo
+      setUsuarios((prev) => prev.map((u) => (u.id === user.id ? { ...u, estado: newEstado } : u)));
+
       notify('Usuario actualizado', 'success');
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al actualizar usuario', 'error');
     }
-  }, [notify, refreshData]);
+  }, [notify]);
+
+  const userSessions = useMemo(() => {
+    if (!viewingUserSessions) return [];
+    return activeSessions.filter((s) => s.usuario_id === viewingUserSessions);
+  }, [activeSessions, viewingUserSessions]);
+
+  const handleRevokeSession = useCallback(async (sessionId: string) => {
+    if (!window.confirm('¿Deseas revocar esta sesión? El usuario será desconectado.')) return;
+
+    try {
+      const headers = await getCsrfHeaders();
+      const res = await fetch(`/api/backend/admin/sesiones/${sessionId}/revocar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo revocar la sesión');
+
+      // Actualizar localmente
+      setActiveSessions((prev) => prev.filter((s) => s.id !== sessionId));
+
+      notify('Sesión revocada correctamente', 'success');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Error al revocar sesión', 'error');
+    }
+  }, [notify]);
 
   const getSubBadge = useCallback((sub: SuscripcionVigente | null) => {
     if (!sub) return { label: 'Sin suscripcion', cls: 'bg-rose-500/14 text-[var(--ui-danger)]' };
@@ -1438,13 +1549,27 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo guardar el tipo de negocio');
 
+      // Actualizar localmente sin recargar todo
+      const nuevoTipo: TipoNegocio = {
+        id: editingTipoId || payload?.data?.id || crypto.randomUUID(),
+        codigo: tipoForm.codigo.trim().toUpperCase(),
+        nombre: tipoForm.nombre.trim(),
+        created_at: editingTipoId ? (tipos.find((t) => t.id === editingTipoId)?.created_at || new Date().toISOString()) : new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      if (editingTipoId) {
+        setTipos((prev) => prev.map((t) => (t.id === editingTipoId ? nuevoTipo : t)));
+      } else {
+        setTipos((prev) => [...prev, nuevoTipo]);
+      }
+
       notify(editingTipoId ? 'Tipo de negocio actualizado' : 'Tipo de negocio creado', 'success');
       handleCancelTipoEdit();
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al guardar tipo de negocio', 'error');
     }
-  }, [editingTipoId, handleCancelTipoEdit, notify, refreshData, tipoForm.codigo, tipoForm.nombre]);
+  }, [editingTipoId, handleCancelTipoEdit, notify, tipoForm.codigo, tipoForm.nombre, tipos]);
 
   const handleDeleteTipo = useCallback(async (tipo: TipoNegocio) => {
     if (!window.confirm(`Deseas eliminar el tipo de negocio ${tipo.nombre}?`)) return;
@@ -1465,15 +1590,17 @@ export default function SuperadminDashboardClient() {
       const payload = await res.json().catch(() => null);
       if (!res.ok || !payload?.success) throw new Error(payload?.error || 'No se pudo eliminar el tipo de negocio');
 
+      // Actualizar localmente sin recargar todo
+      setTipos((prev) => prev.filter((t) => t.id !== tipo.id));
+
       notify('Tipo de negocio eliminado', 'success');
       if (editingTipoId === tipo.id) {
         handleCancelTipoEdit();
       }
-      await refreshData();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Error al eliminar tipo de negocio', 'error');
     }
-  }, [editingTipoId, handleCancelTipoEdit, notify, refreshData]);
+  }, [editingTipoId, handleCancelTipoEdit, notify]);
 
   if (isLoading) {
     return (
@@ -1558,15 +1685,6 @@ export default function SuperadminDashboardClient() {
                 <div className="lg:hidden">
                   <ConsoleThemeToggle compact />
                 </div>
-                <button
-                  type="button"
-                  onClick={refreshData}
-                  disabled={isRefreshing}
-                  className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)] hover:bg-[var(--ui-surface-strong)] disabled:opacity-60"
-                >
-                  <FiRefreshCw size={16} />
-                  {isRefreshing ? 'Actualizando...' : 'Actualizar'}
-                </button>
               </div>
             </div>
           </header>
@@ -2443,12 +2561,12 @@ export default function SuperadminDashboardClient() {
                   }
                 >
                   {!showPlanEditor ? (
-                    <div className="flex h-[460px] flex-col space-y-3">
+                    <div className="flex flex-col space-y-3">
                       <div className="rounded-[16px] bg-[var(--ui-surface)] px-4 py-3 text-sm text-[var(--ui-muted)]">
                         {planes.length} planes registrados. Usa el botón <span className="font-semibold text-[var(--ui-foreground)]">+</span> para crear uno nuevo.
                       </div>
 
-                      <div className="flex-1 space-y-3 overflow-y-auto pr-2">
+                      <div className="max-h-[400px] space-y-3 overflow-y-auto pr-2">
                         {planes.length === 0 ? (
                           <div className="rounded-[20px] border border-dashed border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 text-sm text-[var(--ui-muted)]">
                             Aún no hay planes registrados. Usa el botón <span className="font-semibold text-[var(--ui-foreground)]">+</span> para crear el primero.
@@ -2505,11 +2623,11 @@ export default function SuperadminDashboardClient() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex h-[460px] flex-col overflow-y-auto rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                    <div className="rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-[var(--ui-foreground)]">{editingPlanId ? 'Editar plan seleccionado' : 'Nuevo plan'}</p>
-                          <p className="mt-1 text-xs text-[var(--ui-muted)]">Este mismo bloque cambia completo para crear o editar el plan.</p>
+                          <p className="mt-1 text-xs text-[var(--ui-muted)]">Completa los campos para {editingPlanId ? 'actualizar' : 'crear'} el plan.</p>
                         </div>
                         <button
                           type="button"
@@ -2525,24 +2643,48 @@ export default function SuperadminDashboardClient() {
                         </button>
                       </div>
 
-                      <div className="mt-4 grid gap-3">
-                        <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Código" value={planForm.codigo} onChange={(e) => setPlanForm((p) => ({ ...p, codigo: e.target.value }))} />
-                        <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Nombre" value={planForm.nombre} onChange={(e) => setPlanForm((p) => ({ ...p, nombre: e.target.value }))} />
-                        <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Descripción" value={planForm.descripcion} onChange={(e) => setPlanForm((p) => ({ ...p, descripcion: e.target.value }))} />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Precio mensual" value={planForm.precio_mensual} onChange={(e) => setPlanForm((p) => ({ ...p, precio_mensual: e.target.value }))} />
-                          <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Precio anual" value={planForm.precio_anual} onChange={(e) => setPlanForm((p) => ({ ...p, precio_anual: e.target.value }))} />
+                      <div className="mt-4 grid gap-4">
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Código del plan</label>
+                          <input className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Ej: BASIC_CLINICA" value={planForm.codigo} onChange={(e) => setPlanForm((p) => ({ ...p, codigo: e.target.value }))} />
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Max usuarios" value={planForm.max_usuarios} onChange={(e) => setPlanForm((p) => ({ ...p, max_usuarios: e.target.value.replace(/[^\d]/g, '') }))} />
-                          <input className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Días trial" value={planForm.dias_trial} onChange={(e) => setPlanForm((p) => ({ ...p, dias_trial: e.target.value.replace(/[^\d]/g, '') }))} />
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Nombre del plan</label>
+                          <input className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Ej: Plan Básico" value={planForm.nombre} onChange={(e) => setPlanForm((p) => ({ ...p, nombre: e.target.value }))} />
                         </div>
-                        <select className="rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={planForm.estado} onChange={(e) => setPlanForm((p) => ({ ...p, estado: e.target.value as 'ACTIVO' | 'INACTIVO' }))}>
-                          <option value="ACTIVO">ACTIVO</option>
-                          <option value="INACTIVO">INACTIVO</option>
-                        </select>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Descripción</label>
+                          <input className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Descripción del plan" value={planForm.descripcion} onChange={(e) => setPlanForm((p) => ({ ...p, descripcion: e.target.value }))} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Precio mensual</label>
+                            <input className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="0" value={planForm.precio_mensual} onChange={(e) => setPlanForm((p) => ({ ...p, precio_mensual: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Precio anual</label>
+                            <input className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="0" value={planForm.precio_anual} onChange={(e) => setPlanForm((p) => ({ ...p, precio_anual: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Máx. usuarios</label>
+                            <input className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="Ilimitado si vacío" value={planForm.max_usuarios} onChange={(e) => setPlanForm((p) => ({ ...p, max_usuarios: e.target.value.replace(/[^\d]/g, '') }))} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Días trial</label>
+                            <input className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" placeholder="0" value={planForm.dias_trial} onChange={(e) => setPlanForm((p) => ({ ...p, dias_trial: e.target.value.replace(/[^\d]/g, '') }))} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">Estado</label>
+                          <select className="w-full rounded-[16px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-3 text-sm" value={planForm.estado} onChange={(e) => setPlanForm((p) => ({ ...p, estado: e.target.value as 'ACTIVO' | 'INACTIVO' }))}>
+                            <option value="ACTIVO">ACTIVO</option>
+                            <option value="INACTIVO">INACTIVO</option>
+                          </select>
+                        </div>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-3 pt-2">
                           <button type="button" onClick={handleSavePlan} className="rounded-[16px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
                             {editingPlanId ? 'Guardar cambios' : 'Crear plan'}
                           </button>
@@ -2601,6 +2743,62 @@ export default function SuperadminDashboardClient() {
                     <tbody>
                       {filteredUsers.map((user) => {
                         const clinica = clinicas.find((c) => c.id === user.clinica_id);
+                        const isEditing = editingUser?.id === user.id;
+
+                        if (isEditing && editingUser) {
+                          return (
+                            <tr key={user.id} className="border-t border-[var(--ui-border)] bg-[var(--ui-accent-soft)]">
+                              <td colSpan={6} className="px-4 py-4">
+                                <div className="grid gap-3">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-semibold text-[var(--ui-foreground)]">Editando usuario: {user.email}</p>
+                                    <button type="button" onClick={() => setEditingUser(null)} className="rounded-full bg-[var(--ui-card)] p-2" aria-label="Cancelar"><FiX size={14} /></button>
+                                  </div>
+                                  <div className="grid gap-3 md:grid-cols-4">
+                                    <div>
+                                      <label className="mb-1 block text-xs font-semibold uppercase text-[var(--ui-muted)]">Email</label>
+                                      <input className="w-full rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-3 py-2 text-sm" value={editingUser.email} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, email: e.target.value } : prev))} />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs font-semibold uppercase text-[var(--ui-muted)]">Rol</label>
+                                      <select className="w-full rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-3 py-2 text-sm" value={editingUser.rol} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, rol: e.target.value as Usuario['rol'] } : prev))} disabled={editingUser.rol === 'SUPERADMIN'}>
+                                        <option value="SUPERADMIN">SUPERADMIN</option>
+                                        <option value="ADMIN">ADMIN</option>
+                                        <option value="DOCTOR">DOCTOR</option>
+                                        <option value="STAFF">STAFF</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs font-semibold uppercase text-[var(--ui-muted)]">Clínica</label>
+                                      <select className="w-full rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-3 py-2 text-sm" value={editingUser.clinica_id} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, clinica_id: e.target.value } : prev))} disabled={editingUser.rol === 'SUPERADMIN'}>
+                                        <option value="">Sin clínica</option>
+                                        {clinicas.map((c) => (<option key={c.id} value={c.id}>{c.nombre}</option>))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs font-semibold uppercase text-[var(--ui-muted)]">Estado</label>
+                                      <select className="w-full rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-3 py-2 text-sm" value={editingUser.estado} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, estado: e.target.value as 'ACTIVO' | 'INACTIVO' } : prev))}>
+                                        <option value="ACTIVO">ACTIVO</option>
+                                        <option value="INACTIVO">INACTIVO</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="grid gap-3 md:grid-cols-2">
+                                    <div>
+                                      <label className="mb-1 block text-xs font-semibold uppercase text-[var(--ui-muted)]">Nueva contraseña (opcional)</label>
+                                      <input type="password" className="w-full rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-3 py-2 text-sm" value={editingUser.password} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, password: e.target.value } : prev))} placeholder="Dejar vacío para no cambiar" />
+                                    </div>
+                                    <div className="flex items-end gap-2">
+                                      <button type="button" onClick={handleSaveUser} className="flex-1 rounded-[14px] bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-white">Guardar cambios</button>
+                                      <button type="button" onClick={() => setEditingUser(null)} className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-card)] px-4 py-2 text-sm font-semibold">Cancelar</button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+
                         return (
                           <tr key={user.id} className="border-t border-[var(--ui-border)]">
                             <td className="px-4 py-3">
@@ -2613,16 +2811,17 @@ export default function SuperadminDashboardClient() {
                             <td className="px-4 py-3 text-[var(--ui-muted)]">{formatDate(user.ultimo_login_at)}</td>
                             <td className="px-4 py-3">
                               <div className="flex gap-2">
-                                <button type="button" onClick={() => startEditUser(user)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Editar usuario"><FiEdit2 size={14} /></button>
+                                <button type="button" onClick={() => startEditUser(user)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Editar usuario" title="Editar"><FiEdit2 size={14} /></button>
+                                <button type="button" onClick={() => setViewingUserSessions(viewingUserSessions === user.id ? null : user.id)} className="rounded-full bg-[var(--ui-surface-strong)] p-2" aria-label="Ver sesiones" title="Ver sesiones"><FiClock size={14} /></button>
                                 <button
                                   type="button"
                                   onClick={() => handleToggleUsuario(user)}
                                   className={`rounded-full p-2 text-white ${user.estado === 'ACTIVO' ? 'bg-[var(--ui-danger)]' : 'bg-emerald-600'}`}
                                   aria-label={user.estado === 'ACTIVO' ? 'Desactivar usuario' : 'Reactivar usuario'}
-                                  title={user.estado === 'ACTIVO' ? 'Desactivar usuario' : 'Reactivar usuario'}
+                                  title={user.estado === 'ACTIVO' ? 'Desactivar' : 'Reactivar'}
                                 ><FiUser size={14} /></button>
-                                {user.id !== session.id && (
-                                  <button type="button" onClick={() => handleDeleteUser(user)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white" aria-label="Eliminar usuario"><FiTrash2 size={14} /></button>
+                                {user.id !== session?.id && (
+                                  <button type="button" onClick={() => handleDeleteUser(user)} className="rounded-full bg-[var(--ui-danger)] p-2 text-white" aria-label="Eliminar usuario" title="Eliminar"><FiTrash2 size={14} /></button>
                                 )}
                               </div>
                             </td>
@@ -2632,83 +2831,40 @@ export default function SuperadminDashboardClient() {
                     </tbody>
                   </table>
                 </div>
-              </Surface>
-            )}
 
-            {/* ====== EDITAR USUARIO ====== */}
-            {editingUser && section === 'usuarios' && (
-              <Surface
-                eyebrow="Usuario"
-                title="Editar usuario"
-                description="Edición real del usuario seleccionado con cambios persistidos en backend."
-                action={
-                  <button type="button" onClick={() => setEditingUser(null)} className="rounded-full bg-[var(--ui-surface)] p-2" aria-label="Cerrar">
-                    <FiX size={14} />
-                  </button>
-                }
-              >
-                <div className="grid gap-3">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <input className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm" value={editingUser.dni} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, dni: e.target.value.replace(/\D/g, '').slice(0, 8) } : prev))} placeholder="DNI" />
-                    <button type="button" onClick={handleSearchEditPersona} className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-foreground)]">
-                      Buscar DNI
-                    </button>
+                {/* Panel de sesiones del usuario seleccionado */}
+                {viewingUserSessions && (
+                  <div className="mt-4 rounded-[20px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--ui-foreground)]">Sesiones activas del usuario</p>
+                        <p className="text-xs text-[var(--ui-muted)]">{usuarios.find((u) => u.id === viewingUserSessions)?.email}</p>
+                      </div>
+                      <button type="button" onClick={() => setViewingUserSessions(null)} className="rounded-full bg-[var(--ui-card)] p-2" aria-label="Cerrar"><FiX size={14} /></button>
+                    </div>
+                    {userSessions.length === 0 ? (
+                      <p className="mt-3 text-sm text-[var(--ui-muted)]">Este usuario no tiene sesiones activas.</p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {userSessions.map((sess) => (
+                          <div key={sess.id} className="flex items-center justify-between rounded-[14px] bg-[var(--ui-card)] px-4 py-3">
+                            <div>
+                              <p className="text-sm font-semibold text-[var(--ui-foreground)]">Sesión ID: {sess.id.slice(0, 8)}...</p>
+                              <p className="text-xs text-[var(--ui-muted)]">Creada: {formatDate(sess.created_at)} • Expira: {formatDate(sess.expires_at)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeSession(sess.id)}
+                              className="rounded-full bg-[var(--ui-danger)] px-3 py-1.5 text-xs font-semibold text-white"
+                            >
+                              Revocar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <input readOnly className="rounded-[14px] border border-[var(--ui-border)] bg-slate-100 px-3 py-2 text-sm text-[var(--ui-foreground)]" value={editingUser.nombres} placeholder="Nombres" />
-                    <input readOnly className="rounded-[14px] border border-[var(--ui-border)] bg-slate-100 px-3 py-2 text-sm text-[var(--ui-foreground)]" value={editingUser.apellido_paterno} placeholder="Apellido paterno" />
-                    <input readOnly className="rounded-[14px] border border-[var(--ui-border)] bg-slate-100 px-3 py-2 text-sm text-[var(--ui-foreground)] md:col-span-2" value={editingUser.apellido_materno} placeholder="Apellido materno" />
-                  </div>
-
-                  <input className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm" value={editingUser.email} onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, email: e.target.value } : prev))} />
-
-                  <select
-                    className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm"
-                    value={editingUser.rol}
-                    onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, rol: e.target.value as Usuario['rol'] } : prev))}
-                    disabled={editingUser.rol === 'SUPERADMIN'}
-                  >
-                    <option value="SUPERADMIN">SUPERADMIN</option>
-                    <option value="ADMIN">ADMIN</option>
-                    <option value="DOCTOR">DOCTOR</option>
-                    <option value="STAFF">STAFF</option>
-                  </select>
-
-                  {editingUser.rol !== 'SUPERADMIN' && (
-                    <select
-                      className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm"
-                      value={editingUser.clinica_id}
-                      onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, clinica_id: e.target.value } : prev))}
-                    >
-                      <option value="">Selecciona clínica</option>
-                      {clinicas.map((clinica) => (
-                        <option key={clinica.id} value={clinica.id}>{clinica.nombre}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  <select
-                    className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm"
-                    value={editingUser.estado}
-                    onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, estado: e.target.value as 'ACTIVO' | 'INACTIVO' } : prev))}
-                  >
-                    <option value="ACTIVO">ACTIVO</option>
-                    <option value="INACTIVO">INACTIVO</option>
-                  </select>
-
-                  <input
-                    type="password"
-                    className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm"
-                    value={editingUser.password}
-                    onChange={(e) => setEditingUser((prev) => (prev ? { ...prev, password: e.target.value } : prev))}
-                    placeholder="Nueva contraseña (opcional)"
-                  />
-
-                  <button type="button" onClick={handleSaveUser} className="rounded-[14px] bg-[var(--ui-accent)] px-4 py-3 text-sm font-semibold text-white">
-                    Guardar usuario
-                  </button>
-                </div>
+                )}
               </Surface>
             )}
           </main>
