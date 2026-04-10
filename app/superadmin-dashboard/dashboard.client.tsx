@@ -1078,7 +1078,7 @@ export default function SuperadminDashboardClient() {
         setClinicas((prev) => prev.filter((c) => c.id !== selectedClinicaId));
         setSuscripciones((prev) => prev.filter((s) => s.clinica_id !== selectedClinicaId));
         setUsuarios((prev) => prev.filter((u) => u.clinica_id !== selectedClinicaId));
-        setSelectedClinicaId(null);
+        setSelectedClinicaId('');
       } else {
         const nuevoEstado = action === 'desactivar' ? 'INACTIVA' : 'ACTIVA';
         setClinicas((prev) =>
