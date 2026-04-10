@@ -64,6 +64,7 @@ type Usuario = {
   fecha_nacimiento?: string | null;
   ultimo_login_at?: string | null;
   created_at?: string;
+  updated_at?: string;
 };
 
 type Plan = {
@@ -89,6 +90,8 @@ type TipoNegocio = {
   id: string;
   codigo?: string;
   nombre: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type SuscripcionEstado = 'TRIAL' | 'ACTIVA' | 'PAST_DUE' | 'SUSPENDIDA' | 'CANCELADA' | 'EXPIRADA';
@@ -109,6 +112,8 @@ type SuscripcionVigente = {
   max_storage_gb?: number | null;
   moneda?: string;
   precio_mensual?: number | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type SuscripcionHistorial = {
