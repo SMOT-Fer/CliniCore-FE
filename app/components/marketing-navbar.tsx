@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { FiCreditCard, FiHome, FiLayers, FiLogIn, FiMail } from 'react-icons/fi';
@@ -13,6 +12,27 @@ const NAV_ITEMS = [
   { href: '/contacto', label: 'Contacto', icon: <FiMail /> }
 ];
 
+// Logo CC component
+const LogoCC = () => (
+  <span 
+    style={{
+      width: 18,
+      height: 18,
+      borderRadius: 4,
+      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#fff',
+      fontWeight: 800,
+      fontSize: 8,
+      letterSpacing: '-0.02em'
+    }}
+  >
+    CC
+  </span>
+);
+
 export default function MarketingNavbar() {
   const pathname = usePathname();
 
@@ -21,7 +41,7 @@ export default function MarketingNavbar() {
       <div className="marketing-header-inner">
         <Link href="/" className="marketing-brand" aria-label="Ir al inicio">
           <span className="marketing-brand-logo">
-            <Image src="/logo-clinicore.png" alt="Logo CliniCore" width={18} height={18} />
+            <LogoCC />
           </span>
           <strong className="marketing-brand-name">CliniCore</strong>
         </Link>

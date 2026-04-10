@@ -20,11 +20,6 @@ export const metadata: Metadata = {
   },
   description: "Plataforma clínica CliniCore para administración operativa y seguridad.",
   applicationName: "CliniCore",
-  icons: {
-    icon: "/logo-clinicore.png",
-    shortcut: "/logo-clinicore.png",
-    apple: "/logo-clinicore.png",
-  },
 };
 
 export default function RootLayout({

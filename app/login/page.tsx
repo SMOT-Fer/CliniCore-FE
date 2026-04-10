@@ -7,6 +7,28 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { FiArrowLeft, FiMail, FiLock, FiCreditCard, FiX, FiCheck, FiCalendar, FiUsers, FiShield, FiTrendingUp } from 'react-icons/fi';
 import '../css/login.css';
 
+// Logo CC component
+const LogoCC = ({ size = 48 }: { size?: number }) => (
+  <div 
+    style={{
+      width: size,
+      height: size,
+      borderRadius: size * 0.25,
+      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#fff',
+      fontWeight: 800,
+      fontSize: size * 0.4,
+      letterSpacing: '-0.02em',
+      fontFamily: 'Inter, system-ui, sans-serif'
+    }}
+  >
+    CC
+  </div>
+);
+
 const API_BASE = '/api/backend';
 const API_LOGIN = `${API_BASE}/usuarios/login`;
 const API_ME = `${API_BASE}/usuarios/me`;
@@ -469,7 +491,7 @@ export default function LoginPage() {
         <section className="login-hero-section">
           <div className="login-hero-content">
             <div className="login-hero-brand">
-              <Image src="/logo-clinicore.png" alt="CliniCore" width={48} height={48} />
+              <LogoCC size={48} />
               <span>CliniCore</span>
             </div>
             
@@ -513,7 +535,7 @@ export default function LoginPage() {
             {/* Logo y título */}
             <div className="login-card-header">
               <div className="login-logo-wrapper-mobile">
-                <Image src="/logo-clinicore.png" alt="CliniCore" width={48} height={48} />
+                <LogoCC size={48} />
               </div>
               <h1 className="login-title">
                 {mode === 'login' ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}

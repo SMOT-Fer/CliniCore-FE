@@ -1,13 +1,33 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { FaGithub, FaInstagram, FaLinkedin, FaWhatsapp } from 'react-icons/fa';
+
+// Logo CC component
+const LogoCC = () => (
+  <span 
+    style={{
+      width: 16,
+      height: 16,
+      borderRadius: 4,
+      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#fff',
+      fontWeight: 800,
+      fontSize: 7,
+      letterSpacing: '-0.02em'
+    }}
+  >
+    CC
+  </span>
+);
 
 export default function MarketingFooter() {
   return (
     <footer className="landing-footer" aria-label="Pie de página">
       <div className="landing-footer-brand">
         <span className="landing-footer-logo">
-          <Image src="/logo-clinicore.png" alt="Logo CliniCore" width={16} height={16} />
+          <LogoCC />
         </span>
         <strong>CliniCore</strong>
       </div>
