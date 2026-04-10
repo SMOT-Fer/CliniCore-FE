@@ -45,6 +45,8 @@ type Clinica = {
   tipo_negocio_id?: string | null;
   tipo_negocio_codigo?: string | null;
   tipo_negocio_nombre?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type Usuario = {
